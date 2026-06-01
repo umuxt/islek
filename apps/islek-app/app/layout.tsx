@@ -6,6 +6,11 @@ import { ToastProvider } from '@/context/ToastContext'
 export const metadata: Metadata = {
   title: 'OkeyBill — Okey Kafesi Adisyon Yönetimi',
   description: 'Okey kafeniz için masa takibi, sipariş yönetimi ve günlük istatistikler.',
+  icons: {
+    icon: '/logo-islek.svg',
+    shortcut: '/logo-islek.svg',
+    apple: '/logo-islek.svg',
+  },
 }
 
 export default function RootLayout({
