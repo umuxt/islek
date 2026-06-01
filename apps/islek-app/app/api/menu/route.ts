@@ -13,7 +13,10 @@ export async function GET() {
 
   try {
     const menu = await getMenu(tenantId)
-    return Response.json(menu)
+    const res = Response.json(menu)
+    res.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=30')
+    res.headers.set('Vary', 'Cookie')
+    return res
   } catch (err) {
     console.error('[GET /api/menu]', err)
     return Response.json({ error: 'Menü alınamadı' }, { status: 500 })

@@ -429,14 +429,7 @@ export default function HesapKapatClient({ masaId }: Props) {
       </div>
 
       {/* Ana 3 Kolonlu Grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 360px',
-          gap: 'var(--space-6)',
-          alignItems: 'start',
-        }}
-      >
+      <div className="hesap-kapat-grid">
         {/* Kolon 1: Masanın Tüm Siparişleri */}
         <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div

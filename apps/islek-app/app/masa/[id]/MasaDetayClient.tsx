@@ -367,7 +367,7 @@ export default function MasaDetayClient({ masaId }: Props) {
 
       {/* ─── Masa Açıksa: Sipariş + Hesap ─── */}
       {session && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 'var(--space-6)', alignItems: 'start' }}>
+        <div className="masa-detay-grid" style={{ paddingBottom: '80px' }}>
 
           {/* Sol: Menü */}
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -679,6 +679,35 @@ export default function MasaDetayClient({ masaId }: Props) {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Mobile Floating Bottom Sepet Bar */}
+      {session && (
+        <div className="floating-sepet-bar">
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Hızlı Sepet</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--color-accent)' }}>
+              ₺{toplam.toFixed(2)}
+            </div>
+          </div>
+          <Link
+            id="floating-sepet-btn"
+            href={`/masa/${masaId}/hesap-kapat`}
+            className="btn btn-danger btn-sm"
+            style={{
+              height: 38,
+              padding: '0 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textDecoration: 'none',
+              borderRadius: 'var(--radius-md)',
+              fontWeight: 700,
+            }}
+          >
+            <Receipt size={16} /> Ödemeye Geç
+          </Link>
         </div>
       )}
     </div>
