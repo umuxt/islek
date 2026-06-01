@@ -1,0 +1,9 @@
+{
+  "name": "@islek/db",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "types": "src/types.ts",
+  "dependencies": {
+    "ioredis": "^5.11.0"
+  }
+}

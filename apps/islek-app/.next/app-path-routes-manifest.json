@@ -1,0 +1,22 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/analizler/gun-sonu/page": "/analizler/gun-sonu",
+  "/analizler/page": "/analizler",
+  "/api/categories/route": "/api/categories",
+  "/api/config/route": "/api/config",
+  "/api/menu/route": "/api/menu",
+  "/api/sessions/[id]/pay/route": "/api/sessions/[id]/pay",
+  "/api/sessions/[id]/route": "/api/sessions/[id]",
+  "/api/sessions/[id]/transfer/route": "/api/sessions/[id]/transfer",
+  "/api/sessions/route": "/api/sessions",
+  "/api/stats/end-of-day/route": "/api/stats/end-of-day",
+  "/api/stats/payments/route": "/api/stats/payments",
+  "/api/stats/route": "/api/stats",
+  "/api/tables/route": "/api/tables",
+  "/ayarlar/page": "/ayarlar",
+  "/favicon.ico/route": "/favicon.ico",
+  "/masa/[id]/hesap-kapat/page": "/masa/[id]/hesap-kapat",
+  "/masa/[id]/page": "/masa/[id]",
+  "/page": "/"
+}
