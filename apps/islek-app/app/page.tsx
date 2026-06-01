@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { Map as MapIcon, List, Dices, Receipt, Armchair, ArrowRightLeft, Building2, RefreshCw } from 'lucide-react'
 import type { FloorConfig, TableConfig, TableSession, PricingPolicy } from '@islek/db'
+import { clientCache } from '@/lib/clientCache'
 
 const DEFAULT_FLOOR_ID = 'zemin'
 const FLOOR_STORAGE_KEY = 'islek_aktif_kat'
@@ -26,8 +27,8 @@ function hesaplaToplamClient(session: TableSession, politika: PricingPolicy): nu
   let urunBazliOdenen = 0
   let tutarBazliOdenen = 0
   
-  odenenler.forEach((o: any) => {
-    if (o.tip === 'tutar_bazli' || o.urunler?.some((u: any) => u.menuItemId === 'custom-amount' || u.ad === 'Tutar Olarak Ödeme')) {
+  odenenler.forEach((o) => {
+    if (o.tip === 'tutar_bazli' || o.urunler?.some((u) => u.menuItemId === 'custom-amount' || u.ad === 'Tutar Olarak Ödeme')) {
       tutarBazliOdenen += o.tutar
     } else {
       urunBazliOdenen += o.tutar
@@ -57,8 +58,8 @@ function hesaplaToplamClient(session: TableSession, politika: PricingPolicy): nu
       }
 
       let oyunUcretiOdenen = 0
-      odenenler.forEach((o: any) => {
-        o.urunler?.forEach((u: any) => {
+      odenenler.forEach((o) => {
+        o.urunler?.forEach((u) => {
           if (u.menuItemId === 'game-fee') {
             oyunUcretiOdenen += u.fiyat * u.adet
           }
@@ -108,23 +109,57 @@ export default function CafePage() {
   const [gorunum, setGorunum] = useState<'liste' | 'harita'>('harita')
   const [yukleniyor, setYukleniyor] = useState(true)
   const [tick, setTick] = useState(0) // zamanlayıcı için
+  const [isIdle, setIsIdle] = useState(false)
+  const [isVisible, setIsVisible] = useState(true)
 
   const [transferModuAcik, setTransferModuAcik] = useState(false)
   const [transferSourceMasa, setTransferSourceMasa] = useState<MasaState | null>(null)
   const [isTransferring, setIsTransferring] = useState(false)
 
-  const yukle = useCallback(async () => {
+  // Tab görünürlük takibi (Sekme arka plana geçince polling'i durdurur)
+  useEffect(() => {
+    const handleVisibility = () => {
+      setIsVisible(document.visibilityState === 'visible')
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
+
+  // 3 dakika boyunca etkinlik algılanmazsa uyku moduna geç (Vercel/Redis tasarrufu)
+  useEffect(() => {
+    let idleTimer: NodeJS.Timeout
+    const IDLE_TIMEOUT = 180000 // 3 dakika
+
+    const resetIdleTimer = () => {
+      setIsIdle(false)
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => {
+        setIsIdle(true)
+      }, IDLE_TIMEOUT)
+    }
+
+    resetIdleTimer()
+
+    const events = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll']
+    const handler = () => resetIdleTimer()
+    events.forEach((event) => window.addEventListener(event, handler, { passive: true }))
+
+    return () => {
+      clearTimeout(idleTimer)
+      events.forEach((event) => window.removeEventListener(event, handler))
+    }
+  }, [])
+
+  const yukle = useCallback(async (forceUpdate = false) => {
+    const force = typeof forceUpdate === 'boolean' ? forceUpdate : false
     try {
-      const [tablesRes, sessionsRes, configRes, floorsRes] = await Promise.all([
-        fetch('/api/tables'),
+      const [tables, sessionsRes, policy, floors] = await Promise.all([
+        clientCache.fetchTables(force),
         fetch('/api/sessions'),
-        fetch('/api/config'),
-        fetch('/api/floors'),
+        clientCache.fetchConfig(force),
+        clientCache.fetchFloors(force),
       ])
-      const tables: TableConfig[] = await tablesRes.json()
       const sessions: TableSession[] = await sessionsRes.json()
-      const policy: PricingPolicy = await configRes.json()
-      const floors: FloorConfig[] = await floorsRes.json()
       const floorList = normalizeFloors(Array.isArray(floors) ? floors : [])
       const savedFloor = localStorage.getItem(FLOOR_STORAGE_KEY)
       const nextActiveFloor = savedFloor && floorList.some((floor) => floor.id === savedFloor)
@@ -153,17 +188,50 @@ export default function CafePage() {
     }
   }, [])
 
-  // İlk yükleme + 5 saniyede bir otomatik yenile
+  const yenileDinamik = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sessions')
+      if (!res.ok) return
+      const sessions: TableSession[] = await res.json()
+      const sessionMap = new Map(sessions.map((s) => [s.masaId, s]))
+
+      setMasalar((prevMasalar) =>
+        prevMasalar.map((m) => {
+          const session = sessionMap.get(m.config.id) ?? null
+          let durum: MasaDurumu = 'bos'
+          if (session?.durum === 'hesap_istendi') durum = 'hesap_istendi'
+          else if (session) durum = 'acik'
+          return { ...m, session, durum }
+        })
+      )
+    } catch (err) {
+      console.error('Dinamik oturumlar yenilenemedi', err)
+    }
+  }, [])
+
+  // Sayfa açıldığında ilk tam yükleme
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     yukle()
-    const interval = setInterval(yukle, 5000)
-    return () => clearInterval(interval)
   }, [yukle])
+
+  // Uyanıkken ve sekme görünürken 10 saniyede bir sadece aktif oturumları yenile (Vercel & Redis limit dostu)
+  useEffect(() => {
+    if (isIdle || !isVisible) return
+
+    // Uykudan uyanınca veya sekmeye geri dönünce hemen bir kez yenile
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    yenileDinamik()
+
+    const interval = setInterval(yenileDinamik, 10000)
+    return () => clearInterval(interval)
+  }, [isIdle, isVisible, yenileDinamik])
 
   // Görünüm tercihi (mount olunca)
   useEffect(() => {
     const kayitliGorunum = localStorage.getItem('islek_gorunum')
     if (kayitliGorunum === 'liste' || kayitliGorunum === 'harita') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setGorunum(kayitliGorunum)
     }
   }, [])
@@ -275,7 +343,7 @@ export default function CafePage() {
             </div>
             <div className="page-header__actions">
               {katSecici}
-              <button onClick={yukle} className="btn btn-ghost btn-sm" title="Yenile">
+              <button onClick={() => yukle(true)} className="btn btn-ghost btn-sm" title="Yenile">
                 <RefreshCw size={16} /> Yenile
               </button>
             </div>
@@ -379,7 +447,14 @@ export default function CafePage() {
               </button>
             </div>
 
-            <button onClick={yukle} className="btn btn-secondary btn-sm" title="Yenile" style={{ height: 34, width: 34, padding: 0, minWidth: 'auto' }}>
+            {isIdle && (
+              <span className="badge badge-yellow" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, animation: 'pulse 2s infinite', fontSize: 12, padding: '4px 10px', height: 34 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--color-bill)', display: 'inline-block' }} />
+                Tasarruf Modu (Uyku)
+              </span>
+            )}
+
+            <button onClick={() => yukle(true)} className="btn btn-secondary btn-sm" title="Yenile" style={{ height: 34, width: 34, padding: 0, minWidth: 'auto' }}>
               <RefreshCw size={16} />
             </button>
           </div>

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Armchair, Dices, Receipt, AlertTriangle, Plus, Minus, Check } from 'lucide-react'
 import type { TableConfig, TableSession, MenuItem, PricingPolicy, Siparis, Kategori } from '@islek/db'
+import { clientCache } from '@/lib/clientCache'
 
 // ─── Client-safe yardımcılar ──────────────────────────────
 function hesaplaSureDk(acilis: string) {
@@ -101,32 +102,31 @@ export default function MasaDetayClient({ masaId }: Props) {
     return () => clearInterval(t)
   }, [])
 
-  const yukle = useCallback(async () => {
+  const yukle = useCallback(async (forceUpdate = false) => {
+    const force = typeof forceUpdate === 'boolean' ? forceUpdate : false
     try {
-      const [tablesRes, sessionRes, menuRes, configRes, categoriesRes] = await Promise.all([
-        fetch('/api/tables'),
+      const [tables, sessionRes, menu, policy, categories] = await Promise.all([
+        clientCache.fetchTables(force),
         fetch(`/api/sessions/${masaId}`),
-        fetch('/api/menu'),
-        fetch('/api/config'),
-        fetch('/api/categories'),
+        clientCache.fetchMenu(force),
+        clientCache.fetchConfig(force),
+        clientCache.fetchCategories(force),
       ])
-      const tables: TableConfig[] = await tablesRes.json()
       const masa = tables.find((t) => t.id === masaId) ?? null
       setMasaConfig(masa)
 
-      const menuData = await menuRes.json()
-      setMenu(Array.isArray(menuData) ? menuData : [])
-      setPolitika(await configRes.json())
+      setMenu(Array.isArray(menu) ? menu : [])
+      setPolitika(policy)
 
-      const catsData = await categoriesRes.json()
-      const cats: Kategori[] = Array.isArray(catsData) ? catsData : []
+      const cats: Kategori[] = Array.isArray(categories) ? categories : []
       setCategories(cats)
 
-      if (cats.length > 0) {
-        setAktifKat(cats[0].ad)
-      } else {
-        setAktifKat('diğer')
-      }
+      setAktifKat((prev) => {
+        if (prev && prev !== 'diğer' && cats.some(c => c.ad === prev)) {
+          return prev
+        }
+        return cats.length > 0 ? cats[0].ad : 'diğer'
+      })
 
       if (sessionRes.ok) {
         setSession(await sessionRes.json())
@@ -140,7 +140,10 @@ export default function MasaDetayClient({ masaId }: Props) {
     }
   }, [masaId])
 
-  useEffect(() => { yukle() }, [yukle])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    yukle()
+  }, [yukle])
 
   // ─── Masayı Aç ──────────────────────────────────────────
   async function masayiAc() {

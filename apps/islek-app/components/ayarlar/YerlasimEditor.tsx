@@ -351,7 +351,7 @@ export default function YerlasimEditor({ onDirtyChange }: Props) {
                 }}>
                   <span style={{ color: 'var(--color-text-muted)' }}><Armchair size={48} /></span>
                   <span style={{ fontSize: 14, color: 'var(--color-text-muted)' }}>
-                    Bu katta masa yok. "Masa Ekle" butonuna tıklayın
+                    Bu katta masa yok. &quot;Masa Ekle&quot; butonuna tıklayın
                   </span>
                 </div>
               )}

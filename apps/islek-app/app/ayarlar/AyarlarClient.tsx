@@ -7,6 +7,7 @@ import UcretlendirmeAyarlari from '@/components/ayarlar/UcretlendirmeAyarlari'
 import YerlasimEditor from '@/components/ayarlar/YerlasimEditor'
 import MenuEditor from '@/components/ayarlar/MenuEditor'
 import KategoriYonetimi from '@/components/ayarlar/KategoriYonetimi'
+import { clientCache } from '@/lib/clientCache'
 
 type Tab = 'ucretlendirme' | 'yerlasim' | 'menu' | 'kategori'
 
@@ -25,6 +26,11 @@ export default function AyarlarClient() {
   const [isCurrentTabDirty, setIsCurrentTabDirty] = useState(false)
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [pendingTab, setPendingTab] = useState<Tab | null>(null)
+
+  // Ayarlar açıldığında istemci önbelleğini temizle (güncel verilerin yüklenmesini garanti eder)
+  useEffect(() => {
+    clientCache.clear()
+  }, [])
 
   // Sekme değiştiğinde dirty state'i temizle
   useEffect(() => {

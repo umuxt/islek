@@ -118,11 +118,27 @@ export async function getSession(tenantId: string, masaId: string): Promise<Tabl
 export async function getAllSessions(tenantId: string): Promise<TableSession[]> {
   const redis = getRedis()
   const KEYS = getKeys(tenantId)
-  const activeIds = await redis.smembers(KEYS.activeSessions)
-  if (activeIds.length === 0) return []
   
-  const keys = activeIds.map(id => KEYS.session(id))
-  const raws = await redis.mget(...keys)
+  // Lua script to fetch all active sessions in a single round-trip (conserves Upstash limits)
+  const luaScript = `
+    local activeIds = redis.call('SMEMBERS', KEYS[1])
+    if #activeIds == 0 then
+      return {}
+    end
+    local keys = {}
+    for i, id in ipairs(activeIds) do
+      keys[i] = KEYS[2] .. id
+    end
+    return redis.call('MGET', unpack(keys))
+  `
+  
+  const sessionPrefix = KEYS.session('')
+  const raws = await redis.eval(
+    luaScript,
+    2,
+    KEYS.activeSessions,
+    sessionPrefix
+  ) as (string | null)[]
   
   return raws
     .map((r) => { try { return r ? JSON.parse(r) as TableSession : null } catch { return null } })
