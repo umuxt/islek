@@ -1,10 +1,16 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getSession, setSession, deleteSession, getAllSessions } from '@islek/db'
 import type { TableSession } from '@islek/db'
+import { getTenantId } from '@/lib/auth'
+
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const tenantId = await getTenantId()
+  if (!tenantId) return NextResponse.json({ error: 'Oturum açmanız gerekiyor' }, { status: 401 })
+
+
   try {
     const { id: sourceMasaId } = await params
     const body = await request.json()
@@ -21,7 +27,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // Hedef masa dolu mu? (UI ile aynı mantıkta kontrol etmek için getAllSessions kullanalım, zombie session kalmış olabilir)
-    const activeSessions = await getAllSessions('demo-tenant')
+    const activeSessions = await getAllSessions(tenantId)
     const targetIsActive = activeSessions.some(s => s.masaId === targetMasaId)
     if (targetIsActive) {
       console.log('400: targetSession exists in activeSessions')
@@ -29,7 +35,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // Kaynak masa oturumunu al
-    const sourceSession = await getSession('demo-tenant', sourceMasaId)
+    const sourceSession = await getSession(tenantId, sourceMasaId)
     if (!sourceSession) {
       return Response.json({ error: 'Kaynak masa boş veya bulunamadı' }, { status: 404 })
     }
@@ -41,10 +47,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // Yeni masaya kaydet
-    await setSession('demo-tenant', newSession)
+    await setSession(tenantId, newSession)
 
     // Eski masayı sil
-    await deleteSession('demo-tenant', sourceMasaId)
+    await deleteSession(tenantId, sourceMasaId)
 
     return Response.json({ ok: true })
   } catch (err) {

@@ -1,10 +1,16 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getPaginatedPayments } from '@islek/db'
 import { bugunTarih } from '@/lib/pricing'
+import { getTenantId } from '@/lib/auth'
+
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
+  const tenantId = await getTenantId()
+  if (!tenantId) return NextResponse.json({ error: 'Oturum açmanız gerekiyor' }, { status: 401 })
+
+
   try {
     const { searchParams } = new URL(request.url)
     
@@ -15,7 +21,7 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, parseInt(pageStr, 10) || 1)
     const limit = Math.max(1, parseInt(limitStr, 10) || 20)
     
-    const result = await getPaginatedPayments('demo-tenant', date, page, limit)
+    const result = await getPaginatedPayments(tenantId, date, page, limit)
     
     return Response.json(result)
   } catch (error) {

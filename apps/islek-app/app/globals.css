@@ -108,6 +108,10 @@ input, select, textarea {
   min-height: 100vh;
 }
 
+.page-wrapper--no-navbar {
+  padding-top: 0;
+}
+
 .container {
   max-width: 1280px;
   margin: 0 auto;
@@ -607,4 +611,3 @@ input, select, textarea {
 .canvas-arrow--left:hover { transform: translateY(-50%) scale(1.1); }
 .canvas-arrow--right { right: 12px; top: 50%; transform: translateY(-50%); }
 .canvas-arrow--right:hover { transform: translateY(-50%) scale(1.1); }
-

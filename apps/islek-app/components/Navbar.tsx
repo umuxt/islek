@@ -17,7 +17,7 @@ export default function Navbar() {
     <header className="navbar">
       <div className="navbar__inner">
         <div className="navbar__brand">
-          <img src="/logo-navbar.png" alt="İşlek" style={{ height: '32px', width: 'auto' }} />
+          <img src="/logo-islek.svg" alt="İşlek" style={{ height: '32px', width: 'auto' }} />
           <span className="navbar__title" style={{ display: 'none' }}>İşlek</span>
         </div>
 

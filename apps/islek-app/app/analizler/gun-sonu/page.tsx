@@ -91,7 +91,7 @@ export default function GunSonuPage() {
 
       {yukleniyor || !rapor ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '40px 0' }}>
-          <img src="/logo-loading.png" alt="Loading" style={{ height: '64px', width: 'auto', animation: 'pulse 1.5s ease-in-out infinite' }} />
+          <img src="/logo-islek.svg" alt="Loading" style={{ height: '64px', width: 'auto', animation: 'pulse 1.5s ease-in-out infinite' }} />
           <p style={{ color: 'var(--color-text-muted)', fontSize: 15 }}>Rapor Yükleniyor...</p>
         </div>
       ) : (

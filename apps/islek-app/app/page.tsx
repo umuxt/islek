@@ -200,7 +200,7 @@ export default function CafePage() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', padding: '24px 0' }}>
-            <img src="/logo-loading.png" alt="Loading" style={{ height: '64px', width: 'auto', marginBottom: '16px', animation: 'pulse 1.5s ease-in-out infinite' }} />
+            <img src="/logo-islek.svg" alt="Loading" style={{ height: '64px', width: 'auto', marginBottom: '16px', animation: 'pulse 1.5s ease-in-out infinite' }} />
             <p style={{ color: 'var(--color-text-muted)', fontSize: 15 }}>Masalar Yükleniyor...</p>
           </div>
         </div>
@@ -220,7 +220,6 @@ export default function CafePage() {
             <button onClick={yukle} className="btn btn-ghost btn-sm">↻ Yenile</button>
           </div>
           <div className="empty-state">
-            <div className="empty-state__icon">🪑</div>
             <h2 className="empty-state__title">Henüz masa eklenmedi</h2>
             <p className="empty-state__desc">
               Kafenizin masa yerleşimini oluşturmak için Ayarlar &gt; Yerleşim &amp; Masalar bölümünü kullanın.

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import Navbar from '@/components/Navbar'
+import AppShell from './AppShell'
 import { ToastProvider } from '@/context/ToastContext'
 
 export const metadata: Metadata = {
@@ -17,10 +17,9 @@ export default function RootLayout({
     <html lang="tr">
       <body>
         <ToastProvider>
-          <Navbar />
-          <div className="page-wrapper">
+          <AppShell>
             {children}
-          </div>
+          </AppShell>
         </ToastProvider>
       </body>
     </html>

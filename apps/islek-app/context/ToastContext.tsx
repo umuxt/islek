@@ -1,6 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useState, useCallback } from 'react'
+import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react'
 
 export type ToastType = 'success' | 'error' | 'info'
 
@@ -52,18 +53,18 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           let bg = 'var(--color-surface-2)'
           let border = '1px solid var(--color-border)'
           let color = 'var(--color-text)'
-          let icon = 'ℹ️'
+          let Icon = Info
 
           if (toast.type === 'success') {
             bg = 'rgba(34, 197, 94, 0.15)'
             border = '1px solid var(--color-empty)'
             color = 'var(--color-empty)'
-            icon = '✅'
+            Icon = CheckCircle2
           } else if (toast.type === 'error') {
             bg = 'rgba(239, 68, 68, 0.15)'
             border = '1px solid var(--color-active)'
             color = 'var(--color-active)'
-            icon = '❌'
+            Icon = AlertCircle
           }
 
           return (
@@ -86,21 +87,25 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 fontWeight: 500,
               }}
             >
-              <span style={{ fontSize: '16px' }}>{icon}</span>
+              <Icon size={18} aria-hidden="true" style={{ flexShrink: 0 }} />
               <span style={{ flex: 1, color: 'var(--color-text)' }}>{toast.message}</span>
               <button
+                type="button"
+                aria-label="Bildirimi kapat"
                 onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
                 style={{
                   background: 'none',
                   border: 'none',
                   color: 'var(--color-text-muted)',
-                  fontSize: '12px',
                   cursor: 'pointer',
                   padding: '2px',
                   lineHeight: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
               >
-                ✕
+                <X size={14} aria-hidden="true" />
               </button>
             </div>
           )

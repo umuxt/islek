@@ -1,7 +1,9 @@
 import { getSession, setSession, deleteSession, incrementStatsMasaCount } from '@islek/db'
 import { bugunTarih } from '@/lib/pricing'
 import type { TableSession } from '@islek/db'
-import type { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { getTenantId } from '@/lib/auth'
+
 
 export const dynamic = 'force-dynamic'
 
@@ -10,9 +12,13 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const tenantId = await getTenantId()
+  if (!tenantId) return NextResponse.json({ error: 'Oturum açmanız gerekiyor' }, { status: 401 })
+
+
   try {
     const { id } = await params
-    const session = await getSession('demo-tenant', id)
+    const session = await getSession(tenantId, id)
     if (!session) {
       return Response.json({ error: 'Oturum bulunamadı' }, { status: 404 })
     }
@@ -28,10 +34,14 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const tenantId = await getTenantId()
+  if (!tenantId) return NextResponse.json({ error: 'Oturum açmanız gerekiyor' }, { status: 401 })
+
+
   try {
     const { id } = await params
     const body = await request.json() as TableSession
-    await setSession('demo-tenant', { ...body, masaId: id })
+    await setSession(tenantId, { ...body, masaId: id })
     return Response.json({ ok: true })
   } catch (err) {
     console.error('[POST /api/sessions/[id]]', err)
@@ -44,16 +54,20 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const tenantId = await getTenantId()
+  if (!tenantId) return NextResponse.json({ error: 'Oturum açmanız gerekiyor' }, { status: 401 })
+
+
   try {
     const { id } = await params
-    const session = await getSession('demo-tenant', id)
+    const session = await getSession(tenantId, id)
 
     if (session) {
       const tarih = bugunTarih()
-      await incrementStatsMasaCount('demo-tenant', tarih)
+      await incrementStatsMasaCount(tenantId, tarih)
     }
 
-    await deleteSession('demo-tenant', id)
+    await deleteSession(tenantId, id)
     return Response.json({ ok: true })
   } catch (err) {
     console.error('[DELETE /api/sessions/[id]]', err)

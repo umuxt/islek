@@ -2,6 +2,9 @@ import { getSession, setSession, deleteSession, addPaymentRecord, incrementStats
 import { bugunTarih } from '@/lib/pricing'
 import type { TableSession } from '@islek/db'
 import type { NextRequest } from 'next/server'
+import { NextResponse } from 'next/server'
+import { getTenantId } from '@/lib/auth'
+
 
 export const dynamic = 'force-dynamic'
 
@@ -10,12 +13,16 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const tenantId = await getTenantId()
+  if (!tenantId) return NextResponse.json({ error: 'Oturum açmanız gerekiyor' }, { status: 401 })
+
+
   try {
     const { id } = await params
     const body = await request.json()
     const { secilenler, yontem, tutar, masaKapatilsinMi, masaAdi, tip } = body
 
-    const session = await getSession('demo-tenant', id)
+    const session = await getSession(tenantId, id)
     if (!session) {
       return Response.json({ error: 'Oturum bulunamadı' }, { status: 404 })
     }
@@ -67,7 +74,7 @@ export async function POST(
 
     // 3. Günlük İstatistiklere ödeme kaydını ekle
     const tarih = bugunTarih()
-    await addPaymentRecord('demo-tenant', {
+    await addPaymentRecord(tenantId, {
       id: odemeId,
       masaId: id,
       masaAdi: masaAdi || `Masa ${id}`,
@@ -81,12 +88,12 @@ export async function POST(
     // Kalan ürün kalmadıysa ve masanın kapatılması talep edildiyse
     if (masaKapatilsinMi || session.siparisler.length === 0) {
       // Masayı tamamen kapat
-      await deleteSession('demo-tenant', id)
-      await incrementStatsMasaCount('demo-tenant', tarih)
+      await deleteSession(tenantId, id)
+      await incrementStatsMasaCount(tenantId, tarih)
       return Response.json({ ok: true, kapatildi: true })
     } else {
       // Masayı güncelle
-      await setSession('demo-tenant', session)
+      await setSession(tenantId, session)
       return Response.json({ ok: true, kapatildi: false })
     }
   } catch (err) {

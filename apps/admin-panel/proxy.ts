@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Login sayfası ve API auth'u koru
   if (pathname.startsWith('/login') || pathname.startsWith('/api/auth')) {
     return NextResponse.next()
   }

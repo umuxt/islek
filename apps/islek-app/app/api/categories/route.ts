@@ -1,11 +1,18 @@
+import { NextResponse } from 'next/server'
 import { getCategories, setCategories, getMenu, setMenu } from '@islek/db'
 import type { Kategori } from '@islek/db'
+import { getTenantId } from '@/lib/auth'
+
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
+  const tenantId = await getTenantId()
+  if (!tenantId) return NextResponse.json({ error: 'Oturum açmanız gerekiyor' }, { status: 401 })
+
+
   try {
-    const categories = await getCategories('demo-tenant')
+    const categories = await getCategories(tenantId)
     return Response.json(categories)
   } catch (err) {
     console.error('[GET /api/categories]', err)
@@ -14,14 +21,18 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const tenantId = await getTenantId()
+  if (!tenantId) return NextResponse.json({ error: 'Oturum açmanız gerekiyor' }, { status: 401 })
+
+
   try {
     const newCategories = await request.json() as Kategori[]
     if (!Array.isArray(newCategories)) {
       return Response.json({ error: 'Geçersiz veri formatı' }, { status: 400 })
     }
 
-    const oldCategories = await getCategories('demo-tenant')
-    const menu = await getMenu('demo-tenant')
+    const oldCategories = await getCategories(tenantId)
+    const menu = await getMenu(tenantId)
     let menuUpdated = false
 
     // 1. Silinen kategorileri tespit et (oldCategories'te olup newCategories'te olmayanlar)
@@ -57,9 +68,9 @@ export async function POST(request: Request) {
     })
 
     // 4. Redis'e kaydet
-    await setCategories('demo-tenant', newCategories)
+    await setCategories(tenantId, newCategories)
     if (menuUpdated) {
-      await setMenu('demo-tenant', updatedMenu)
+      await setMenu(tenantId, updatedMenu)
     }
 
     return Response.json({ ok: true, menuUpdated })

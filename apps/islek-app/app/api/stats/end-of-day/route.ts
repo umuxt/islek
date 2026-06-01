@@ -1,10 +1,16 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import Redis from 'ioredis'
 import { bugunTarih } from '@/lib/pricing'
+import { getTenantId } from '@/lib/auth'
+
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
+  const tenantId = await getTenantId()
+  if (!tenantId) return NextResponse.json({ error: 'Oturum açmanız gerekiyor' }, { status: 401 })
+
+
   try {
     const { searchParams } = new URL(request.url)
     const date = searchParams.get('date') || bugunTarih()
@@ -12,7 +18,7 @@ export async function GET(request: NextRequest) {
     const url = process.env.REDIS_URL ?? 'redis://localhost:6379'
     const redis = new Redis(url, { lazyConnect: false })
     
-    const paymentsKey = `stats:payments:${date}`
+    const paymentsKey = `tenant:${tenantId}:stats:payments:${date}`
     const raws = await redis.lrange(paymentsKey, 0, -1)
     
     let nakit = 0
