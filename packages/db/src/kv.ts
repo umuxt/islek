@@ -40,6 +40,7 @@ export const getKeys = (tenantId: string) => ({
   activeSessions: `tenant:${tenantId}:session:active`,
   session: (id: string) => `tenant:${tenantId}:session:table:${id}`,
   dailyStats: (date: string) => `tenant:${tenantId}:stats:daily:${date}`,
+  dailyStatsIndex: `tenant:${tenantId}:stats:daily:index`,
   payments: (date: string) => `tenant:${tenantId}:stats:payments:${date}`,
 })
 
@@ -165,29 +166,84 @@ export async function deleteSession(tenantId: string, masaId: string): Promise<v
 
 // ─── İstatistikler ───────────────────────────────────────
 export async function getDailyStats(tenantId: string, tarih: string): Promise<DailyStats | null> {
-  return kvGet<DailyStats>(getKeys(tenantId).dailyStats(tarih))
+  const redis = getRedis()
+  const KEYS = getKeys(tenantId)
+  
+  // Try fetching from the indexed Hash first
+  const indexed = await redis.hget(KEYS.dailyStatsIndex, tarih)
+  if (indexed) {
+    try {
+      return JSON.parse(indexed) as DailyStats
+    } catch {
+      return null
+    }
+  }
+  
+  // Fallback to individual legacy key
+  const legacy = await kvGet<DailyStats>(KEYS.dailyStats(tarih))
+  if (legacy) {
+    // Migrate to Hash index asynchronously in background
+    redis.hset(KEYS.dailyStatsIndex, tarih, JSON.stringify(legacy)).catch(err => {
+      console.error('[Migration to dailyStatsIndex failed]', err)
+    })
+    return legacy
+  }
+  
+  return null
 }
 
 export async function getRecentStats(tenantId: string, gunSayisi = 30): Promise<DailyStats[]> {
   const bugun = new Date()
-  const keys: string[] = []
+  const dates: string[] = []
   const KEYS = getKeys(tenantId)
   
   for (let i = 0; i < gunSayisi; i++) {
     const tarih = new Date(bugun)
     tarih.setDate(bugun.getDate() - i)
-    keys.push(KEYS.dailyStats(tarih.toISOString().split('T')[0]))
+    dates.push(tarih.toISOString().split('T')[0])
   }
   
   const redis = getRedis()
-  const raws = await redis.mget(...keys)
   
+  // Query Hash index in a single round-trip using HMGET (avoids cross-slot MGET penalty)
+  const raws = await redis.hmget(KEYS.dailyStatsIndex, ...dates)
   const sonuclar: DailyStats[] = []
-  raws.forEach((r) => {
+  const missingDates: string[] = []
+  
+  raws.forEach((r, idx) => {
+    const date = dates[idx]
     if (r) {
-      try { sonuclar.push(JSON.parse(r) as DailyStats) } catch {}
+      try {
+        sonuclar.push(JSON.parse(r) as DailyStats)
+      } catch {}
+    } else {
+      missingDates.push(date)
     }
   })
+  
+  // Lazy migration: if there are missing dates in Hash, check legacy individual keys
+  if (missingDates.length > 0) {
+    const legacyKeys = missingDates.map(d => KEYS.dailyStats(d))
+    const legacyRaws = await redis.mget(...legacyKeys)
+    const migrationPromises: Promise<any>[] = []
+    
+    legacyRaws.forEach((r, idx) => {
+      const date = missingDates[idx]
+      if (r) {
+        try {
+          const parsed = JSON.parse(r) as DailyStats
+          sonuclar.push(parsed)
+          migrationPromises.push(redis.hset(KEYS.dailyStatsIndex, date, r))
+        } catch {}
+      }
+    })
+    
+    if (migrationPromises.length > 0) {
+      Promise.all(migrationPromises).catch(err => {
+        console.error('[Bulk migration to dailyStatsIndex failed]', err)
+      })
+    }
+  }
   
   return sonuclar.sort((a, b) => a.tarih.localeCompare(b.tarih))
 }
@@ -221,8 +277,9 @@ export async function addPaymentRecord(tenantId: string, record: {
     }
   }
 
+  let updatedStats: DailyStats
   if (!mevcut) {
-    await kvSet(statsKey, {
+    updatedStats = {
       tarih: bugun,
       toplamCiro: record.tutar,
       masaSayisi: 0,
@@ -230,7 +287,7 @@ export async function addPaymentRecord(tenantId: string, record: {
       nakitCiro: record.yontem === 'nakit' ? record.tutar : 0,
       krediKartiCiro: record.yontem === 'kredi_karti' ? record.tutar : 0,
       ibanCiro: record.yontem === 'iban' ? record.tutar : 0,
-    } satisfies DailyStats)
+    } satisfies DailyStats
   } else {
     const birlesikMap: Record<string, number> = {}
     for (const item of mevcut.enCokSatilanlar) {
@@ -244,7 +301,7 @@ export async function addPaymentRecord(tenantId: string, record: {
     const kredi = mevcut.krediKartiCiro ?? 0
     const iban = mevcut.ibanCiro ?? 0
 
-    await kvSet(statsKey, {
+    updatedStats = {
       ...mevcut,
       toplamCiro: mevcut.toplamCiro + record.tutar,
       enCokSatilanlar: Object.entries(birlesikMap)
@@ -254,26 +311,41 @@ export async function addPaymentRecord(tenantId: string, record: {
       nakitCiro: nakit + (record.yontem === 'nakit' ? record.tutar : 0),
       krediKartiCiro: kredi + (record.yontem === 'kredi_karti' ? record.tutar : 0),
       ibanCiro: iban + (record.yontem === 'iban' ? record.tutar : 0),
-    } satisfies DailyStats)
+    } satisfies DailyStats
   }
+
+  // Save to both legacy key and index Hash
+  await Promise.all([
+    redis.set(statsKey, JSON.stringify(updatedStats)),
+    redis.hset(KEYS.dailyStatsIndex, bugun, JSON.stringify(updatedStats))
+  ])
 }
 
 export async function incrementStatsMasaCount(tenantId: string, tarih: string): Promise<void> {
-  const statsKey = getKeys(tenantId).dailyStats(tarih)
+  const KEYS = getKeys(tenantId)
+  const statsKey = KEYS.dailyStats(tarih)
   const mevcut = await getDailyStats(tenantId, tarih)
+  const redis = getRedis()
+  
+  let updatedStats: DailyStats
   if (mevcut) {
-    await kvSet(statsKey, {
+    updatedStats = {
       ...mevcut,
       masaSayisi: mevcut.masaSayisi + 1
-    } satisfies DailyStats)
+    }
   } else {
-    await kvSet(statsKey, {
+    updatedStats = {
       tarih,
       toplamCiro: 0,
       masaSayisi: 1,
       enCokSatilanlar: []
-    } satisfies DailyStats)
+    }
   }
+  
+  await Promise.all([
+    redis.set(statsKey, JSON.stringify(updatedStats)),
+    redis.hset(KEYS.dailyStatsIndex, tarih, JSON.stringify(updatedStats))
+  ])
 }
 
 export async function getPaginatedPayments(tenantId: string, date: string, page: number, limit: number) {
@@ -306,4 +378,19 @@ export async function getPaginatedPayments(tenantId: string, date: string, page:
       totalPages: Math.ceil(total / limit)
     }
   }
+}
+
+export async function getPaymentsList(tenantId: string, date: string): Promise<any[]> {
+  const redis = getRedis()
+  const paymentsKey = getKeys(tenantId).payments(date)
+  const raws = await redis.lrange(paymentsKey, 0, -1)
+  const items: any[] = []
+  raws.forEach(r => {
+    if (r) {
+      try {
+        items.push(JSON.parse(r))
+      } catch {}
+    }
+  })
+  return items
 }

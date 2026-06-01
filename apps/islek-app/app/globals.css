@@ -491,7 +491,8 @@ input, select, textarea {
 }
 
 .page-container {
-  padding: var(--space-6) 0 var(--space-12);
+  padding-top: var(--space-6);
+  padding-bottom: var(--space-12);
 }
 
 .page-header {
@@ -656,7 +657,8 @@ input, select, textarea {
     padding: 0 var(--space-4);
   }
   .page-container {
-    padding: var(--space-4) 0 var(--space-8);
+    padding-top: var(--space-4);
+    padding-bottom: var(--space-8);
   }
   .page-title {
     font-size: 22px;
