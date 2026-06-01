@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import AppShell from './AppShell'
 import { ToastProvider } from '@/context/ToastContext'
+import { Analytics } from '@vercel/analytics/next'
 
 export const metadata: Metadata = {
   title: 'İşlek — Kafe Adisyon Yönetimi',
@@ -26,6 +27,7 @@ export default function RootLayout({
             {children}
           </AppShell>
         </ToastProvider>
+        <Analytics />
       </body>
     </html>
   )
