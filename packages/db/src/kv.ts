@@ -6,6 +6,7 @@ import type {
   TableSession,
   DailyStats,
   Kategori,
+  FloorConfig,
 } from './types'
 
 // ─── Redis istemcisi ─────────────────────────────────────
@@ -34,6 +35,7 @@ export const getKeys = (tenantId: string) => ({
   menu: `tenant:${tenantId}:config:menu`,
   categories: `tenant:${tenantId}:config:categories`,
   tables: `tenant:${tenantId}:config:tables`,
+  floors: `tenant:${tenantId}:config:floors`,
   pricing: `tenant:${tenantId}:config:pricing`,
   activeSessions: `tenant:${tenantId}:session:active`,
   session: (id: string) => `tenant:${tenantId}:session:table:${id}`,
@@ -60,12 +62,41 @@ export async function setCategories(tenantId: string, categories: Kategori[]): P
 }
 
 // ─── Masa Konfigürasyonu ─────────────────────────────────
+export const DEFAULT_FLOOR_ID = 'zemin'
+export const DEFAULT_FLOORS: FloorConfig[] = [{ id: DEFAULT_FLOOR_ID, ad: 'Zemin Kat' }]
+
+function normalizeFloors(floors: FloorConfig[] | null): FloorConfig[] {
+  const list = Array.isArray(floors) ? floors.filter((floor) => floor.id) : []
+  const hasDefault = list.some((floor) => floor.id === DEFAULT_FLOOR_ID)
+  const withDefault = hasDefault ? list : [...DEFAULT_FLOORS, ...list]
+  return withDefault.map((floor) => ({
+    id: floor.id,
+    ad: floor.ad?.trim() || (floor.id === DEFAULT_FLOOR_ID ? 'Zemin Kat' : floor.id),
+  }))
+}
+
+function normalizeTables(tables: TableConfig[] | null): TableConfig[] {
+  const list = Array.isArray(tables) ? tables : []
+  return list.map((table) => ({
+    ...table,
+    katId: table.katId || DEFAULT_FLOOR_ID,
+  }))
+}
+
+export async function getFloors(tenantId: string): Promise<FloorConfig[]> {
+  return normalizeFloors(await kvGet<FloorConfig[]>(getKeys(tenantId).floors))
+}
+
+export async function setFloors(tenantId: string, floors: FloorConfig[]): Promise<void> {
+  await kvSet(getKeys(tenantId).floors, normalizeFloors(floors))
+}
+
 export async function getTables(tenantId: string): Promise<TableConfig[]> {
-  return (await kvGet<TableConfig[]>(getKeys(tenantId).tables)) ?? []
+  return normalizeTables(await kvGet<TableConfig[]>(getKeys(tenantId).tables))
 }
 
 export async function setTables(tenantId: string, tables: TableConfig[]): Promise<void> {
-  await kvSet(getKeys(tenantId).tables, tables)
+  await kvSet(getKeys(tenantId).tables, normalizeTables(tables))
 }
 
 // ─── Ücretlendirme ───────────────────────────────────────

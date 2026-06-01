@@ -14,12 +14,18 @@ export interface MenuItem {
 }
 
 // ─── Masa Konfigürasyonu ─────────────────────────────────
+export interface FloorConfig {
+  id: string
+  ad: string
+}
+
 export interface TableConfig {
   id: string
   ad: string        // "Masa 1", "VIP 2" vb.
   x: number         // kanvas X koordinatı
   y: number         // kanvas Y koordinatı
   kapasite: number
+  katId?: string
   renk?: string
 }
 

@@ -1,9 +1,12 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { Map as MapIcon, List, Dices, Receipt, Armchair, ArrowRightLeft, AlertTriangle } from 'lucide-react'
-import type { TableConfig, TableSession, PricingPolicy } from '@islek/db'
+import { Map as MapIcon, List, Dices, Receipt, Armchair, ArrowRightLeft, Building2, RefreshCw } from 'lucide-react'
+import type { FloorConfig, TableConfig, TableSession, PricingPolicy } from '@islek/db'
+
+const DEFAULT_FLOOR_ID = 'zemin'
+const FLOOR_STORAGE_KEY = 'okeybill_aktif_kat'
 
 // Süre formatlama (client-safe, lib/pricing'den bağımsız)
 function hesaplaSureDk(acilisZamani: string): number {
@@ -80,8 +83,27 @@ interface MasaState {
   durum: MasaDurumu
 }
 
+function normalizeFloors(floors: FloorConfig[]): FloorConfig[] {
+  const list = Array.isArray(floors) ? floors.filter((floor) => floor.id) : []
+  const hasDefault = list.some((floor) => floor.id === DEFAULT_FLOOR_ID)
+  return hasDefault ? list : [{ id: DEFAULT_FLOOR_ID, ad: 'Zemin Kat' }, ...list]
+}
+
+function katAdi(floor: FloorConfig, index: number) {
+  const ad = floor.ad?.trim()
+  if (ad) return ad
+  if (floor.id === DEFAULT_FLOOR_ID) return 'Zemin Kat'
+  return `${index}. Kat`
+}
+
+function katSira(floors: FloorConfig[], floorId: string) {
+  return Math.max(1, floors.filter((floor) => floor.id !== DEFAULT_FLOOR_ID).findIndex((floor) => floor.id === floorId) + 1)
+}
+
 export default function CafePage() {
   const [masalar, setMasalar] = useState<MasaState[]>([])
+  const [katlar, setKatlar] = useState<FloorConfig[]>([{ id: DEFAULT_FLOOR_ID, ad: 'Zemin Kat' }])
+  const [aktifKatId, setAktifKatId] = useState(DEFAULT_FLOOR_ID)
   const [politika, setPolitika] = useState<PricingPolicy>({ mod: 'siparis_bazli' })
   const [gorunum, setGorunum] = useState<'liste' | 'harita'>('harita')
   const [yukleniyor, setYukleniyor] = useState(true)
@@ -93,25 +115,35 @@ export default function CafePage() {
 
   const yukle = useCallback(async () => {
     try {
-      const [tablesRes, sessionsRes, configRes] = await Promise.all([
+      const [tablesRes, sessionsRes, configRes, floorsRes] = await Promise.all([
         fetch('/api/tables'),
         fetch('/api/sessions'),
         fetch('/api/config'),
+        fetch('/api/floors'),
       ])
       const tables: TableConfig[] = await tablesRes.json()
       const sessions: TableSession[] = await sessionsRes.json()
       const policy: PricingPolicy = await configRes.json()
+      const floors: FloorConfig[] = await floorsRes.json()
+      const floorList = normalizeFloors(Array.isArray(floors) ? floors : [])
+      const savedFloor = localStorage.getItem(FLOOR_STORAGE_KEY)
+      const nextActiveFloor = savedFloor && floorList.some((floor) => floor.id === savedFloor)
+        ? savedFloor
+        : DEFAULT_FLOOR_ID
 
       setPolitika(policy)
+      setKatlar(floorList)
+      setAktifKatId(nextActiveFloor)
       const sessionMap = new Map(sessions.map((s) => [s.masaId, s]))
 
       setMasalar(
         tables.map((t) => {
+          const config = { ...t, katId: t.katId || DEFAULT_FLOOR_ID }
           const session = sessionMap.get(t.id) ?? null
           let durum: MasaDurumu = 'bos'
           if (session?.durum === 'hesap_istendi') durum = 'hesap_istendi'
           else if (session) durum = 'acik'
-          return { config: t, session, durum }
+          return { config, session, durum }
         })
       )
     } catch (err) {
@@ -139,6 +171,13 @@ export default function CafePage() {
   const handleGorunumDegistir = (yeni: 'liste' | 'harita') => {
     setGorunum(yeni)
     localStorage.setItem('okeybill_gorunum', yeni)
+  }
+
+  const handleKatDegistir = (katId: string) => {
+    setAktifKatId(katId)
+    localStorage.setItem(FLOOR_STORAGE_KEY, katId)
+    setTransferModuAcik(false)
+    setTransferSourceMasa(null)
   }
 
   // Timer için (her dakika)
@@ -208,21 +247,54 @@ export default function CafePage() {
     )
   }
 
-  if (masalar.length === 0) {
+  const aktifKat = katlar.find((floor) => floor.id === aktifKatId) ?? katlar[0] ?? { id: DEFAULT_FLOOR_ID, ad: 'Zemin Kat' }
+  const aktifKatIndex = aktifKat ? katSira(katlar, aktifKat.id) : 1
+  const gorunenMasalar = masalar.filter((masa) => (masa.config.katId || DEFAULT_FLOOR_ID) === aktifKatId)
+  const aktifSayisi = gorunenMasalar.filter((m) => m.durum !== 'bos').length
+  const katSecici = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+      {katlar.map((kat) => {
+        const index = katSira(katlar, kat.id)
+        return (
+          <button
+            key={kat.id}
+            type="button"
+            onClick={() => handleKatDegistir(kat.id)}
+            className={`btn btn-sm ${aktifKatId === kat.id ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <Building2 size={15} />
+            {katAdi(kat, index)}
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  if (gorunenMasalar.length === 0) {
+    const tumSistemdeMasaYok = masalar.length === 0
+
     return (
       <main>
         <div className="container">
           <div className="page-header">
             <div>
               <h1 className="page-title">Cafe</h1>
-              <p className="page-subtitle">Masa yerleşimi ve aktif oturumlar</p>
+              <p className="page-subtitle">{katAdi(aktifKat, aktifKatIndex)} yerleşimi ve aktif oturumlar</p>
             </div>
-            <button onClick={yukle} className="btn btn-ghost btn-sm">↻ Yenile</button>
+            <div className="page-header__actions">
+              {katSecici}
+              <button onClick={yukle} className="btn btn-ghost btn-sm" title="Yenile">
+                <RefreshCw size={16} /> Yenile
+              </button>
+            </div>
           </div>
           <div className="empty-state">
-            <h2 className="empty-state__title">Henüz masa eklenmedi</h2>
+            <h2 className="empty-state__title">{tumSistemdeMasaYok ? 'Henüz masa eklenmedi' : 'Bu katta masa yok'}</h2>
             <p className="empty-state__desc">
-              Kafenizin masa yerleşimini oluşturmak için Ayarlar &gt; Yerleşim &amp; Masalar bölümünü kullanın.
+              {tumSistemdeMasaYok
+                ? 'Kafenizin masa yerleşimini oluşturmak için Ayarlar > Yerleşim & Masalar bölümünü kullanın.'
+                : `${katAdi(aktifKat, aktifKatIndex)} için masa eklemek veya mevcut masaları düzenlemek üzere Ayarlar > Yerleşim & Masalar bölümünü kullanın.`}
             </p>
             <Link href="/ayarlar?tab=yerlasim" className="btn btn-primary btn-lg">
               Masa Ekle
@@ -237,26 +309,27 @@ export default function CafePage() {
   const PAD = 24
   const CHIP_W = 110
   const CHIP_H = 90
-  const maxX = Math.max(...masalar.map((m) => m.config.x + CHIP_W)) + PAD
-  const maxY = Math.max(...masalar.map((m) => m.config.y + CHIP_H)) + PAD
+  const maxX = Math.max(...gorunenMasalar.map((m) => m.config.x + CHIP_W)) + PAD
+  const maxY = Math.max(...gorunenMasalar.map((m) => m.config.y + CHIP_H)) + PAD
   const canvasW = Math.max(maxX, 600)
   const canvasH = Math.max(maxY, 400)
-
-  const aktifSayisi = masalar.filter((m) => m.durum !== 'bos').length
 
   return (
     <main className="container page-container">
         <div className="page-header">
           <div className="page-header__left">
-            <div>
-              <h1 className="page-title">Cafe</h1>
+              <div>
+                <h1 className="page-title">Cafe</h1>
+                <p className="page-subtitle">{katAdi(aktifKat, aktifKatIndex)} yerleşimi ve aktif oturumlar</p>
+              </div>
             </div>
-          </div>
 
           <div className="page-header__actions">
+            {katSecici}
+
             {/* Masa Özeti */}
             <div style={{ fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 500, paddingRight: 'var(--space-2)', borderRight: '1px solid var(--color-border)' }}>
-              <span style={{ color: 'var(--color-text)', fontWeight: 600 }}>{aktifSayisi}</span> / {masalar.length} masa aktif
+              <span style={{ color: 'var(--color-text)', fontWeight: 600 }}>{aktifSayisi}</span> / {gorunenMasalar.length} masa aktif
             </div>
 
             {/* Lejant */}
@@ -316,7 +389,9 @@ export default function CafePage() {
               </button>
             </div>
 
-            <button onClick={yukle} className="btn btn-secondary btn-sm" title="Yenile" style={{ height: 34, width: 34, padding: 0, minWidth: 'auto' }}>↻</button>
+            <button onClick={yukle} className="btn btn-secondary btn-sm" title="Yenile" style={{ height: 34, width: 34, padding: 0, minWidth: 'auto' }}>
+              <RefreshCw size={16} />
+            </button>
           </div>
         </div>
 
@@ -360,7 +435,7 @@ export default function CafePage() {
             gap: 'var(--space-4)',
             paddingBottom: 'var(--space-12)'
           }}>
-            {masalar.map(({ config, session, durum }) => {
+            {gorunenMasalar.map(({ config, session, durum }) => {
               const sure = session ? formatSure(hesaplaSureDk(session.acilisZamani)) : null
               const toplam = session ? hesaplaToplamClient(session, politika) : 0
               void tick
@@ -488,7 +563,7 @@ export default function CafePage() {
                 backgroundSize: '40px 40px',
               }}
             >
-              {masalar.map(({ config, session, durum }) => {
+              {gorunenMasalar.map(({ config, session, durum }) => {
                 const sure = session ? formatSure(hesaplaSureDk(session.acilisZamani)) : null
                 void tick
 

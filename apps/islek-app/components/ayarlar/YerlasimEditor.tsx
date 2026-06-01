@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { TableConfig } from '@islek/db'
+import type { FloorConfig, TableConfig } from '@islek/db'
 import { useToast } from '@/context/ToastContext'
-import { Plus, Save, Armchair, Trash } from 'lucide-react'
+import { Building2, Plus, Save, Armchair, Trash } from 'lucide-react'
 
 const CHIP_W = 100
 const CHIP_H = 80
@@ -12,6 +12,8 @@ const CANVAS_H = 600 // Viewport Height
 const VIRTUAL_W = 2000 // Virtual Layout Width
 const VIRTUAL_H = 1500 // Virtual Layout Height
 const GRID = 20
+const DEFAULT_FLOOR_ID = 'zemin'
+const FLOOR_STORAGE_KEY = 'okeybill_aktif_kat'
 
 function snap(v: number) {
   return Math.round(v / GRID) * GRID
@@ -21,6 +23,27 @@ function yeniId() {
   return `masa-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 }
 
+function yeniKatId() {
+  return `kat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+}
+
+function normalizeFloors(floors: FloorConfig[]): FloorConfig[] {
+  const list = Array.isArray(floors) ? floors.filter((floor) => floor.id) : []
+  const hasDefault = list.some((floor) => floor.id === DEFAULT_FLOOR_ID)
+  return hasDefault ? list : [{ id: DEFAULT_FLOOR_ID, ad: 'Zemin Kat' }, ...list]
+}
+
+function katAdi(floor: FloorConfig, index: number) {
+  const ad = floor.ad?.trim()
+  if (ad) return ad
+  if (floor.id === DEFAULT_FLOOR_ID) return 'Zemin Kat'
+  return `${index}. Kat`
+}
+
+function katSira(floors: FloorConfig[], floorId: string) {
+  return Math.max(1, floors.filter((floor) => floor.id !== DEFAULT_FLOOR_ID).findIndex((floor) => floor.id === floorId) + 1)
+}
+
 interface Props {
   onDirtyChange?: (isDirty: boolean) => void
 }
@@ -28,6 +51,9 @@ interface Props {
 export default function YerlasimEditor({ onDirtyChange }: Props) {
   const [masalar, setMasalar] = useState<TableConfig[]>([])
   const [originalMasalar, setOriginalMasalar] = useState<TableConfig[]>([])
+  const [katlar, setKatlar] = useState<FloorConfig[]>([{ id: DEFAULT_FLOOR_ID, ad: 'Zemin Kat' }])
+  const [originalKatlar, setOriginalKatlar] = useState<FloorConfig[]>([{ id: DEFAULT_FLOOR_ID, ad: 'Zemin Kat' }])
+  const [aktifKatId, setAktifKatId] = useState(DEFAULT_FLOOR_ID)
   const [yukleniyor, setYukleniyor] = useState(true)
   const [kaydediliyor, setKaydediliyor] = useState(false)
   const [secili, setSecili] = useState<string | null>(null)
@@ -37,18 +63,33 @@ export default function YerlasimEditor({ onDirtyChange }: Props) {
   const canvasRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    fetch('/api/tables')
-      .then((r) => r.json())
-      .then((data: TableConfig[]) => {
-        const list = Array.isArray(data) ? data : []
-        setMasalar(list)
-        setOriginalMasalar(JSON.parse(JSON.stringify(list)))
+    Promise.all([
+      fetch('/api/tables').then((r) => r.json()),
+      fetch('/api/floors').then((r) => r.json()),
+    ])
+      .then(([tablesData, floorsData]: [TableConfig[], FloorConfig[]]) => {
+        const tableList = Array.isArray(tablesData)
+          ? tablesData.map((masa) => ({ ...masa, katId: masa.katId || DEFAULT_FLOOR_ID }))
+          : []
+        const floorList = normalizeFloors(Array.isArray(floorsData) ? floorsData : [])
+        const savedFloor = localStorage.getItem(FLOOR_STORAGE_KEY)
+        const nextActiveFloor = savedFloor && floorList.some((floor) => floor.id === savedFloor)
+          ? savedFloor
+          : DEFAULT_FLOOR_ID
+
+        setMasalar(tableList)
+        setOriginalMasalar(JSON.parse(JSON.stringify(tableList)))
+        setKatlar(floorList)
+        setOriginalKatlar(JSON.parse(JSON.stringify(floorList)))
+        setAktifKatId(nextActiveFloor)
         setYukleniyor(false)
       })
       .catch(() => setYukleniyor(false))
   }, [])
 
-  const isDirty = JSON.stringify(masalar) !== JSON.stringify(originalMasalar)
+  const isDirty =
+    JSON.stringify(masalar) !== JSON.stringify(originalMasalar) ||
+    JSON.stringify(katlar) !== JSON.stringify(originalKatlar)
 
   // AyarlarClient'a değişiklik durumunu bildir
   useEffect(() => {
@@ -104,17 +145,42 @@ export default function YerlasimEditor({ onDirtyChange }: Props) {
     // Görünür olan ekranın ortasında bir yerde ekle ya da scroll hizasına göre
     const scrollX = canvasRef.current ? canvasRef.current.scrollLeft : 0
     const scrollY = canvasRef.current ? canvasRef.current.scrollTop : 0
+    const aktifKatMasalari = masalar.filter((masa) => (masa.katId || DEFAULT_FLOOR_ID) === aktifKatId)
     
     const yeni: TableConfig = {
       id: yeniId(),
-      ad: `Masa ${masalar.length + 1}`,
-      x: snap(scrollX + 100 + (masalar.length % 3) * 120),
-      y: snap(scrollY + 100 + Math.floor((masalar.length % 9) / 3) * 120),
+      ad: `Masa ${aktifKatMasalari.length + 1}`,
+      x: snap(scrollX + 100 + (aktifKatMasalari.length % 3) * 120),
+      y: snap(scrollY + 100 + Math.floor((aktifKatMasalari.length % 9) / 3) * 120),
       kapasite: 4,
+      katId: aktifKatId,
     }
     setMasalar((prev) => [...prev, yeni])
     setSecili(yeni.id)
     showToast(`${yeni.ad} eklendi. Kaydetmeyi unutmayın.`, 'info')
+  }
+
+  function katEkle() {
+    const katNo = katlar.filter((floor) => floor.id !== DEFAULT_FLOOR_ID).length + 1
+    const yeni: FloorConfig = {
+      id: yeniKatId(),
+      ad: `${katNo}. Kat`,
+    }
+    setKatlar((prev) => [...prev, yeni])
+    setAktifKatId(yeni.id)
+    setSecili(null)
+    localStorage.setItem(FLOOR_STORAGE_KEY, yeni.id)
+    showToast(`${yeni.ad} eklendi. Kaydetmeyi unutmayın.`, 'info')
+  }
+
+  function katSec(id: string) {
+    setAktifKatId(id)
+    setSecili(null)
+    localStorage.setItem(FLOOR_STORAGE_KEY, id)
+  }
+
+  function katAdiGuncelle(id: string, ad: string) {
+    setKatlar((prev) => prev.map((floor) => (floor.id === id ? { ...floor, ad } : floor)))
   }
 
   function masaSil(id: string) {
@@ -133,14 +199,30 @@ export default function YerlasimEditor({ onDirtyChange }: Props) {
 
   async function handleKaydet() {
     setKaydediliyor(true)
+    const kaydedilecekKatlar = katlar.map((floor) => {
+      const index = katSira(katlar, floor.id)
+      return { ...floor, ad: katAdi(floor, index) }
+    })
+    const kaydedilecekMasalar = masalar.map((masa) => ({ ...masa, katId: masa.katId || DEFAULT_FLOOR_ID }))
+
     try {
-      const res = await fetch('/api/tables', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(masalar),
-      })
-      if (res.ok) {
-        setOriginalMasalar(JSON.parse(JSON.stringify(masalar)))
+      const [floorsRes, tablesRes] = await Promise.all([
+        fetch('/api/floors', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(kaydedilecekKatlar),
+        }),
+        fetch('/api/tables', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(kaydedilecekMasalar),
+        }),
+      ])
+      if (floorsRes.ok && tablesRes.ok) {
+        setKatlar(kaydedilecekKatlar)
+        setMasalar(kaydedilecekMasalar)
+        setOriginalKatlar(JSON.parse(JSON.stringify(kaydedilecekKatlar)))
+        setOriginalMasalar(JSON.parse(JSON.stringify(kaydedilecekMasalar)))
         showToast('Yerleşim başarıyla kaydedildi.', 'success')
       } else {
         showToast('Yerleşim kaydedilemedi.', 'error')
@@ -153,6 +235,9 @@ export default function YerlasimEditor({ onDirtyChange }: Props) {
   }
 
   const seciliMasa = masalar.find((m) => m.id === secili)
+  const aktifKat = katlar.find((floor) => floor.id === aktifKatId) ?? katlar[0] ?? { id: DEFAULT_FLOOR_ID, ad: 'Zemin Kat' }
+  const aktifKatMasalari = masalar.filter((masa) => (masa.katId || DEFAULT_FLOOR_ID) === aktifKatId)
+  const aktifKatIndex = aktifKat ? katSira(katlar, aktifKat.id) : 1
 
   if (yukleniyor) {
     return <div className="skeleton" style={{ height: 400, borderRadius: 'var(--radius-lg)' }} />
@@ -161,13 +246,34 @@ export default function YerlasimEditor({ onDirtyChange }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
 
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+        {katlar.map((kat) => {
+          const index = katSira(katlar, kat.id)
+          return (
+            <button
+              key={kat.id}
+              type="button"
+              onClick={() => katSec(kat.id)}
+              className={`btn btn-sm ${aktifKatId === kat.id ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Building2 size={15} />
+              {katAdi(kat, index)}
+            </button>
+          )
+        })}
+        <button type="button" onClick={katEkle} className="btn btn-secondary btn-sm">
+          <Plus size={15} /> Kat Ekle
+        </button>
+      </div>
+
       {/* Araç Çubuğu */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
         <button id="masa-ekle-btn" onClick={masaEkle} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <Plus size={16} /> Masa Ekle
         </button>
         <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-          {masalar.length} masa · Masaları kanvasta sürükleyerek yerleştirin · Ok tuşlarıyla kaydırın
+          {katAdi(aktifKat, aktifKatIndex)} · {aktifKatMasalari.length} masa · Masaları kanvasta sürükleyerek yerleştirin · Ok tuşlarıyla kaydırın
         </span>
         <div style={{ marginLeft: 'auto' }}>
           <button
@@ -233,7 +339,7 @@ export default function YerlasimEditor({ onDirtyChange }: Props) {
                 top: 0,
               }}
             >
-              {masalar.length === 0 && (
+              {aktifKatMasalari.length === 0 && (
                 <div style={{
                   position: 'absolute',
                   inset: 0,
@@ -245,12 +351,12 @@ export default function YerlasimEditor({ onDirtyChange }: Props) {
                 }}>
                   <span style={{ color: 'var(--color-text-muted)' }}><Armchair size={48} /></span>
                   <span style={{ fontSize: 14, color: 'var(--color-text-muted)' }}>
-                    "Masa Ekle" butonuna tıklayın
+                    Bu katta masa yok. "Masa Ekle" butonuna tıklayın
                   </span>
                 </div>
               )}
 
-              {masalar.map((masa) => {
+              {aktifKatMasalari.map((masa) => {
                 const aktif = secili === masa.id
                 return (
                   <div
@@ -292,49 +398,72 @@ export default function YerlasimEditor({ onDirtyChange }: Props) {
           </div>
         </div>
 
-        {/* Seçili Masa Özellikleri */}
-        {seciliMasa && (
-          <div
-            className="card"
-            style={{ minWidth: 220, display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
-          >
-            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Masa Özellikleri
-            </p>
+        {/* Kat ve Seçili Masa Özellikleri */}
+        <div
+          className="card"
+          style={{ minWidth: 240, display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
+        >
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Kat Özellikleri
+          </p>
 
-            <div className="form-group">
-              <label htmlFor="masa-ad" className="form-label">Ad</label>
-              <input
-                id="masa-ad"
-                className="form-input"
-                value={seciliMasa.ad}
-                onChange={(e) => masaGuncelle(seciliMasa.id, 'ad', e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="masa-kapasite" className="form-label">Kapasite</label>
-              <input
-                id="masa-kapasite"
-                type="number"
-                min={1}
-                max={20}
-                className="form-input"
-                value={seciliMasa.kapasite}
-                onChange={(e) => masaGuncelle(seciliMasa.id, 'kapasite', parseInt(e.target.value) || 1)}
-              />
-            </div>
-
-            <button
-              id={`masa-sil-${seciliMasa.id}`}
-              onClick={() => masaSil(seciliMasa.id)}
-              className="btn btn-danger btn-sm"
-              style={{ width: '100%' }}
-            >
-              <Trash size={16} /> Masayı Sil
-            </button>
+          <div className="form-group">
+            <label htmlFor="kat-ad" className="form-label">Aktif Kat Adı</label>
+            <input
+              id="kat-ad"
+              className="form-input"
+              value={aktifKat.ad}
+              placeholder={katAdi(aktifKat, aktifKatIndex)}
+              onChange={(e) => katAdiGuncelle(aktifKat.id, e.target.value)}
+            />
           </div>
-        )}
+
+          <div style={{ height: 1, background: 'var(--color-border)' }} />
+
+          {seciliMasa ? (
+            <>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Masa Özellikleri
+              </p>
+
+              <div className="form-group">
+                <label htmlFor="masa-ad" className="form-label">Ad</label>
+                <input
+                  id="masa-ad"
+                  className="form-input"
+                  value={seciliMasa.ad}
+                  onChange={(e) => masaGuncelle(seciliMasa.id, 'ad', e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="masa-kapasite" className="form-label">Kapasite</label>
+                <input
+                  id="masa-kapasite"
+                  type="number"
+                  min={1}
+                  max={20}
+                  className="form-input"
+                  value={seciliMasa.kapasite}
+                  onChange={(e) => masaGuncelle(seciliMasa.id, 'kapasite', parseInt(e.target.value) || 1)}
+                />
+              </div>
+
+              <button
+                id={`masa-sil-${seciliMasa.id}`}
+                onClick={() => masaSil(seciliMasa.id)}
+                className="btn btn-danger btn-sm"
+                style={{ width: '100%' }}
+              >
+                <Trash size={16} /> Masayı Sil
+              </button>
+            </>
+          ) : (
+            <p style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--color-text-muted)' }}>
+              Masa özelliklerini düzenlemek için bu kattaki bir masayı seçin.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   )
