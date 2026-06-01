@@ -289,7 +289,7 @@ export default function CafePage() {
               </button>
             </div>
           </div>
-          <div className="empty-state">
+          <div className="empty-state empty-state--cafe">
             <h2 className="empty-state__title">{tumSistemdeMasaYok ? 'Henüz masa eklenmedi' : 'Bu katta masa yok'}</h2>
             <p className="empty-state__desc">
               {tumSistemdeMasaYok

@@ -363,6 +363,13 @@ input, select, textarea {
   text-align: center;
 }
 
+.empty-state--cafe {
+  justify-content: flex-start;
+  min-height: calc(100vh - var(--navbar-height) - 220px);
+  padding-top: clamp(32px, 8vh, 80px);
+  padding-bottom: var(--space-12);
+}
+
 .empty-state__icon {
   font-size: 56px;
   line-height: 1;
