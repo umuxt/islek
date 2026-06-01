@@ -4,8 +4,8 @@ import AppShell from './AppShell'
 import { ToastProvider } from '@/context/ToastContext'
 
 export const metadata: Metadata = {
-  title: 'OkeyBill — Okey Kafesi Adisyon Yönetimi',
-  description: 'Okey kafeniz için masa takibi, sipariş yönetimi ve günlük istatistikler.',
+  title: 'İşlek — Kafe Adisyon Yönetimi',
+  description: 'Kafeniz için masa takibi, sipariş yönetimi ve günlük istatistikler.',
   icons: {
     icon: '/logo-islek.svg',
     shortcut: '/logo-islek.svg',

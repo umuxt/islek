@@ -13,7 +13,7 @@ const VIRTUAL_W = 2000 // Virtual Layout Width
 const VIRTUAL_H = 1500 // Virtual Layout Height
 const GRID = 20
 const DEFAULT_FLOOR_ID = 'zemin'
-const FLOOR_STORAGE_KEY = 'okeybill_aktif_kat'
+const FLOOR_STORAGE_KEY = 'islek_aktif_kat'
 
 function snap(v: number) {
   return Math.round(v / GRID) * GRID

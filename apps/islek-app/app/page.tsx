@@ -6,7 +6,7 @@ import { Map as MapIcon, List, Dices, Receipt, Armchair, ArrowRightLeft, Buildin
 import type { FloorConfig, TableConfig, TableSession, PricingPolicy } from '@islek/db'
 
 const DEFAULT_FLOOR_ID = 'zemin'
-const FLOOR_STORAGE_KEY = 'okeybill_aktif_kat'
+const FLOOR_STORAGE_KEY = 'islek_aktif_kat'
 
 // Süre formatlama (client-safe, lib/pricing'den bağımsız)
 function hesaplaSureDk(acilisZamani: string): number {
@@ -162,7 +162,7 @@ export default function CafePage() {
 
   // Görünüm tercihi (mount olunca)
   useEffect(() => {
-    const kayitliGorunum = localStorage.getItem('okeybill_gorunum')
+    const kayitliGorunum = localStorage.getItem('islek_gorunum')
     if (kayitliGorunum === 'liste' || kayitliGorunum === 'harita') {
       setGorunum(kayitliGorunum)
     }
@@ -170,7 +170,7 @@ export default function CafePage() {
 
   const handleGorunumDegistir = (yeni: 'liste' | 'harita') => {
     setGorunum(yeni)
-    localStorage.setItem('okeybill_gorunum', yeni)
+    localStorage.setItem('islek_gorunum', yeni)
   }
 
   const handleKatDegistir = (katId: string) => {
