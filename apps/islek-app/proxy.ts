@@ -11,7 +11,12 @@ export function proxy(request: NextRequest) {
   }
 
   // Static dosyalar
-  if (pathname.startsWith('/_next') || pathname.startsWith('/favicon')) {
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/favicon') ||
+    pathname.startsWith('/logo-') ||
+    pathname.match(/\.(?:svg|png|jpg|jpeg|gif|webp|ico)$/)
+  ) {
     return NextResponse.next()
   }
 
@@ -25,5 +30,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|logo-.*\\.png).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
 }

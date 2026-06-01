@@ -364,10 +364,10 @@ input, select, textarea {
 }
 
 .empty-state--cafe {
-  justify-content: flex-start;
-  min-height: calc(100vh - var(--navbar-height) - 220px);
-  padding-top: clamp(32px, 8vh, 80px);
-  padding-bottom: var(--space-12);
+  justify-content: center;
+  min-height: min(420px, calc(100vh - var(--navbar-height) - 160px));
+  padding-top: var(--space-8);
+  padding-bottom: var(--space-8);
 }
 
 .empty-state__icon {

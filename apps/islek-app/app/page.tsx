@@ -230,18 +230,10 @@ export default function CafePage() {
 
   if (yukleniyor) {
     return (
-      <main>
-        <div className="container">
-          <div className="page-header">
-            <div>
-              <h1 className="page-title">Cafe</h1>
-              <p className="page-subtitle">Yükleniyor…</p>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', padding: '24px 0' }}>
-            <img src="/logo-islek.svg" alt="Loading" style={{ height: '64px', width: 'auto', marginBottom: '16px', animation: 'pulse 1.5s ease-in-out infinite' }} />
-            <p style={{ color: 'var(--color-text-muted)', fontSize: 15 }}>Masalar Yükleniyor...</p>
-          </div>
+      <main className="container" style={{ padding: 'var(--space-8) 0' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '40px 0' }}>
+          <img src="/logo-islek.svg" alt="Loading" style={{ height: '64px', width: 'auto', animation: 'pulse 1.5s ease-in-out infinite' }} />
+          <p style={{ color: 'var(--color-text-muted)', fontSize: 15 }}>Masalar Yükleniyor...</p>
         </div>
       </main>
     )
@@ -275,8 +267,7 @@ export default function CafePage() {
     const tumSistemdeMasaYok = masalar.length === 0
 
     return (
-      <main>
-        <div className="container">
+      <main className="container page-container">
           <div className="page-header">
             <div>
               <h1 className="page-title">Cafe</h1>
@@ -300,7 +291,6 @@ export default function CafePage() {
               Masa Ekle
             </Link>
           </div>
-        </div>
       </main>
     )
   }
