@@ -14,7 +14,7 @@ let _redis: Redis | null = null
 
 function getRedis(): Redis {
   if (_redis) return _redis
-  const url = process.env.REDIS_URL ?? 'redis://localhost:6379'
+  const url = process.env.REDIS_URL ?? process.env.KV_URL ?? process.env.UPSTASH_REDIS_URL ?? 'redis://localhost:6379'
   _redis = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 2 })
   return _redis
 }

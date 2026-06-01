@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+const DEV_ADMIN_SESSION_SECRET = 'dev-admin-session'
+
+function getAdminSessionSecret() {
+  return process.env.ADMIN_SESSION_SECRET ?? process.env.ADMIN_SECRET ?? (process.env.NODE_ENV === 'production' ? '' : DEV_ADMIN_SESSION_SECRET)
+}
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
@@ -8,9 +14,9 @@ export function proxy(request: NextRequest) {
   }
 
   const token = request.cookies.get('admin_token')?.value
-  const adminSecret = process.env.ADMIN_SECRET ?? 'admin123'
+  const adminSessionSecret = getAdminSessionSecret()
 
-  if (!token || token !== adminSecret) {
+  if (!adminSessionSecret || !token || token !== adminSessionSecret) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
