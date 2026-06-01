@@ -109,6 +109,7 @@ export default function CafePage() {
   const [gorunum, setGorunum] = useState<'liste' | 'harita'>('harita')
   const [yukleniyor, setYukleniyor] = useState(true)
   const [tick, setTick] = useState(0) // zamanlayıcı için
+  const [isSlowMode, setIsSlowMode] = useState(false)
   const [isIdle, setIsIdle] = useState(false)
   const [isVisible, setIsVisible] = useState(true)
 
@@ -125,30 +126,6 @@ export default function CafePage() {
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [])
 
-  // 3 dakika boyunca etkinlik algılanmazsa uyku moduna geç (Vercel/Redis tasarrufu)
-  useEffect(() => {
-    let idleTimer: NodeJS.Timeout
-    const IDLE_TIMEOUT = 180000 // 3 dakika
-
-    const resetIdleTimer = () => {
-      setIsIdle(false)
-      clearTimeout(idleTimer)
-      idleTimer = setTimeout(() => {
-        setIsIdle(true)
-      }, IDLE_TIMEOUT)
-    }
-
-    resetIdleTimer()
-
-    const events = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll']
-    const handler = () => resetIdleTimer()
-    events.forEach((event) => window.addEventListener(event, handler, { passive: true }))
-
-    return () => {
-      clearTimeout(idleTimer)
-      events.forEach((event) => window.removeEventListener(event, handler))
-    }
-  }, [])
 
   const yukle = useCallback(async (forceUpdate = false) => {
     const force = typeof forceUpdate === 'boolean' ? forceUpdate : false
@@ -209,13 +186,54 @@ export default function CafePage() {
     }
   }, [])
 
+  // 3 dakika boyunca etkinlik algılanmazsa uyku moduna geç, 1 dakika etkinlik algılanmazsa yavaş polling moduna geç
+  useEffect(() => {
+    let idleTimer: NodeJS.Timeout
+    let slowTimer: NodeJS.Timeout
+    const SLOW_TIMEOUT = 60000  // 1 dakika
+    const IDLE_TIMEOUT = 180000 // 3 dakika
+
+    const resetTimers = () => {
+      setIsIdle(false)
+      setIsSlowMode((prev) => {
+        if (prev) {
+          // Yavaş moddan çıkarken hemen veriyi yenileyelim
+          yenileDinamik()
+        }
+        return false
+      })
+      clearTimeout(idleTimer)
+      clearTimeout(slowTimer)
+      
+      slowTimer = setTimeout(() => {
+        setIsSlowMode(true)
+      }, SLOW_TIMEOUT)
+
+      idleTimer = setTimeout(() => {
+        setIsIdle(true)
+      }, IDLE_TIMEOUT)
+    }
+
+    resetTimers()
+
+    const events = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll']
+    const handler = () => resetTimers()
+    events.forEach((event) => window.addEventListener(event, handler, { passive: true }))
+
+    return () => {
+      clearTimeout(idleTimer)
+      clearTimeout(slowTimer)
+      events.forEach((event) => window.removeEventListener(event, handler))
+    }
+  }, [yenileDinamik])
+
   // Sayfa açıldığında ilk tam yükleme
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     yukle()
   }, [yukle])
 
-  // Uyanıkken ve sekme görünürken 10 saniyede bir sadece aktif oturumları yenile (Vercel & Redis limit dostu)
+  // Uyanıkken ve sekme görünürken aktif oturumları yenile (Vercel & Redis limit dostu)
   useEffect(() => {
     if (isIdle || !isVisible) return
 
@@ -223,9 +241,10 @@ export default function CafePage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     yenileDinamik()
 
-    const interval = setInterval(yenileDinamik, 10000)
+    const intervalTime = isSlowMode ? 45000 : 20000
+    const interval = setInterval(yenileDinamik, intervalTime)
     return () => clearInterval(interval)
-  }, [isIdle, isVisible, yenileDinamik])
+  }, [isIdle, isVisible, isSlowMode, yenileDinamik])
 
   // Görünüm tercihi (mount olunca)
   useEffect(() => {
