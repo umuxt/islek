@@ -11,10 +11,7 @@ export async function GET() {
 
   try {
     const floors = await getFloors(tenantId)
-    const res = Response.json(floors)
-    res.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=30')
-    res.headers.set('Vary', 'Cookie')
-    return res
+    return Response.json(floors)
   } catch (err) {
     console.error('[GET /api/floors]', err)
     return Response.json({ error: 'Katlar alınamadı' }, { status: 500 })

@@ -13,10 +13,7 @@ export async function GET() {
 
   try {
     const categories = await getCategories(tenantId)
-    const res = Response.json(categories)
-    res.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=30')
-    res.headers.set('Vary', 'Cookie')
-    return res
+    return Response.json(categories)
   } catch (err) {
     console.error('[GET /api/categories]', err)
     return Response.json({ error: 'Kategoriler alınamadı' }, { status: 500 })

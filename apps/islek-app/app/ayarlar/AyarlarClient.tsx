@@ -21,11 +21,19 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 export default function AyarlarClient() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const activeTab = (searchParams.get('tab') as Tab) ?? 'ucretlendirme'
+  const [activeTab, setActiveTab] = useState<Tab>('ucretlendirme')
 
   const [isCurrentTabDirty, setIsCurrentTabDirty] = useState(false)
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [pendingTab, setPendingTab] = useState<Tab | null>(null)
+
+  // Initialize tab from URL on mount/param change
+  useEffect(() => {
+    const tab = searchParams.get('tab') as Tab
+    if (tab && TABS.some(t => t.id === tab)) {
+      setActiveTab(tab)
+    }
+  }, [searchParams])
 
   // Ayarlar açıldığında istemci önbelleğini temizle (güncel verilerin yüklenmesini garanti eder)
   useEffect(() => {
@@ -37,19 +45,26 @@ export default function AyarlarClient() {
     setIsCurrentTabDirty(false)
   }, [activeTab])
 
+  function switchTab(tab: Tab) {
+    setActiveTab(tab)
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', tab)
+    window.history.replaceState(null, '', url.pathname + url.search)
+  }
+
   function handleTabClick(tab: Tab) {
     if (activeTab === tab) return
     if (isCurrentTabDirty) {
       setPendingTab(tab)
       setShowConfirmModal(true)
     } else {
-      router.push(`/ayarlar?tab=${tab}`)
+      switchTab(tab)
     }
   }
 
   function confirmTabSwitch() {
     if (pendingTab) {
-      router.push(`/ayarlar?tab=${pendingTab}`)
+      switchTab(pendingTab)
     }
     setIsCurrentTabDirty(false)
     setShowConfirmModal(false)
