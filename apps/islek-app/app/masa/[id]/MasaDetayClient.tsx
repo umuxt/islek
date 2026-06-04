@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Armchair, Dices, Receipt, AlertTriangle, Plus, Minus, Check } from 'lucide-react'
+import { Armchair, Dices, Receipt, AlertTriangle, Plus, Minus, Check, History } from 'lucide-react'
 import type { TableConfig, TableSession, MenuItem, PricingPolicy, Siparis, Kategori } from '@islek/db'
 import { clientCache } from '@/lib/clientCache'
 
@@ -15,6 +15,16 @@ function formatSure(dk: number) {
   const s = Math.floor(dk / 60)
   const m = dk % 60
   return s === 0 ? `${m}dk` : `${s}s ${m}dk`
+}
+function formatSaat(isoString: string) {
+  try {
+    const d = new Date(isoString)
+    const h = d.getHours().toString().padStart(2, '0')
+    const m = d.getMinutes().toString().padStart(2, '0')
+    return `${h}:${m}`
+  } catch {
+    return ''
+  }
 }
 function hesaplaToplamClient(session: TableSession, politika: PricingPolicy): number {
   const sipTotal = session.siparisler.reduce((t, s) => t + s.fiyat * s.adet, 0)
@@ -282,6 +292,37 @@ export default function MasaDetayClient({ masaId }: Props) {
       }
     })
   }
+
+  // ─── Hareket Geçmişi (Son 4 Aksiyon) ───────────────────────────
+  const aksiyonlar = (() => {
+    if (!session) return []
+    
+    const yontemMap: Record<string, string> = {
+      nakit: 'Nakit Ödeme',
+      kredi_karti: 'Kart Ödemesi',
+      iban: 'IBAN Transferi'
+    }
+
+    const siparisAksiyonlari = session.siparisler.map((s) => ({
+      id: s.id,
+      tip: 'siparis' as const,
+      baslik: s.ad,
+      detay: `${s.adet} adet eklendi`,
+      zamani: s.zamani,
+    }))
+
+    const odemeAksiyonlari = (session.odemeler || []).map((o) => ({
+      id: o.id,
+      tip: 'odeme' as const,
+      baslik: yontemMap[o.yontem] || o.yontem,
+      detay: `₺${o.tutar.toFixed(2)} alındı`,
+      zamani: o.zamani,
+    }))
+
+    return [...siparisAksiyonlari, ...odemeAksiyonlari]
+      .sort((a, b) => new Date(b.zamani).getTime() - new Date(a.zamani).getTime())
+      .slice(0, 4)
+  })()
 
   return (
     <div className="container page-container">
@@ -678,6 +719,28 @@ export default function MasaDetayClient({ masaId }: Props) {
                 </div>
               )}
             </div>
+
+            {/* Hareket Geçmişi */}
+            {session && aksiyonlar.length > 0 && (
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: 'var(--space-1)' }}>
+                  <History size={16} /> Hareket Geçmişi
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {aksiyonlar.map((a, idx) => (
+                    <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13, borderBottom: idx === aksiyonlar.length - 1 ? 'none' : '1px solid var(--color-border)', paddingBottom: idx === aksiyonlar.length - 1 ? '0' : '8px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{a.baslik}</span>
+                        <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{a.detay}</span>
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-faint)', fontVariantNumeric: 'tabular-nums' }}>
+                        {formatSaat(a.zamani)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
