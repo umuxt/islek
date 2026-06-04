@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Redis from 'ioredis'
+import { getPaymentsList } from '@islek/db'
 import { bugunTarih } from '@/lib/pricing'
 import { getTenantId } from '@/lib/auth'
-
 
 export const dynamic = 'force-dynamic'
 
@@ -10,16 +9,11 @@ export async function GET(request: NextRequest) {
   const tenantId = await getTenantId()
   if (!tenantId) return NextResponse.json({ error: 'Oturum açmanız gerekiyor' }, { status: 401 })
 
-
   try {
     const { searchParams } = new URL(request.url)
     const date = searchParams.get('date') || bugunTarih()
 
-    const url = process.env.REDIS_URL ?? process.env.KV_URL ?? process.env.UPSTASH_REDIS_URL ?? 'redis://localhost:6379'
-    const redis = new Redis(url, { lazyConnect: false })
-    
-    const paymentsKey = `tenant:${tenantId}:stats:payments:${date}`
-    const raws = await redis.lrange(paymentsKey, 0, -1)
+    const payments = await getPaymentsList(tenantId, date)
     
     let nakit = 0
     let krediKarti = 0
@@ -29,39 +23,32 @@ export async function GET(request: NextRequest) {
     const urunler: Record<string, { adet: number; tutar: number }> = {}
     const islemler: any[] = []
 
-    for (const raw of raws) {
-      try {
-        const p = JSON.parse(raw)
-        islemler.push(p)
-        
-        const tutar = Number(p.tutar) || 0
-        toplamCiro += tutar
-        
-        if (p.yontem === 'nakit') nakit += tutar
-        else if (p.yontem === 'kredi_karti') krediKarti += tutar
-        else if (p.yontem === 'iban') iban += tutar
-        
-        if (Array.isArray(p.urunler)) {
-          for (const u of p.urunler) {
-            // Tutar bazlı veya özel bir isimlendirme olabilir, item bazında topla
-            const ad = u.ad || 'Bilinmeyen Ürün'
-            const adet = Number(u.adet) || 1
-            const fiyat = Number(u.fiyat) || 0
-            const satirTutari = fiyat * adet
-            
-            if (!urunler[ad]) {
-              urunler[ad] = { adet: 0, tutar: 0 }
-            }
-            urunler[ad].adet += adet
-            urunler[ad].tutar += satirTutari
+    for (const p of payments) {
+      if (!p) continue
+      islemler.push(p)
+      
+      const tutar = Number(p.tutar) || 0
+      toplamCiro += tutar
+      
+      if (p.yontem === 'nakit') nakit += tutar
+      else if (p.yontem === 'kredi_karti') krediKarti += tutar
+      else if (p.yontem === 'iban') iban += tutar
+      
+      if (Array.isArray(p.urunler)) {
+        for (const u of p.urunler) {
+          const ad = u.ad || 'Bilinmeyen Ürün'
+          const adet = Number(u.adet) || 1
+          const fiyat = Number(u.fiyat) || 0
+          const satirTutari = fiyat * adet
+          
+          if (!urunler[ad]) {
+            urunler[ad] = { adet: 0, tutar: 0 }
           }
+          urunler[ad].adet += adet
+          urunler[ad].tutar += satirTutari
         }
-      } catch (e) {
-        // invalid json, skip
       }
     }
-    
-    redis.disconnect()
 
     const urunListesi = Object.entries(urunler)
       .map(([ad, data]) => ({ ad, adet: data.adet, tutar: data.tutar }))

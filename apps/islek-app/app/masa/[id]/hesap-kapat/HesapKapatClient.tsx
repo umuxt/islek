@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { Banknote, CreditCard, Building, Check, HelpCircle, Tags, ShoppingCart } from 'lucide-react'
 import { useToast } from '@/context/ToastContext'
 import type { TableConfig, TableSession, MenuItem, PricingPolicy, Kategori } from '@islek/db'
+import { clientCache } from '@/lib/clientCache'
+import { getActiveWaiter } from '@/lib/waiter'
 
 interface Props {
   masaId: string
@@ -42,29 +44,27 @@ export default function HesapKapatClient({ masaId }: Props) {
   const [paymentMode, setPaymentMode] = useState<'urun_bazli' | 'tutar_bazli'>('urun_bazli')
   const [customAmount, setCustomAmount] = useState<string>('')
 
-  const yukle = useCallback(async () => {
+  const yukle = useCallback(async (forceUpdate = false) => {
+    const force = typeof forceUpdate === 'boolean' ? forceUpdate : false
     try {
-      const [tablesRes, sessionRes, menuRes, configRes, categoriesRes] = await Promise.all([
-        fetch('/api/tables'),
+      const [tables, sessionRes, menu, policy, categories] = await Promise.all([
+        clientCache.fetchTables(force),
         fetch(`/api/sessions/${masaId}`),
-        fetch('/api/menu'),
-        fetch('/api/config'),
-        fetch('/api/categories'),
+        clientCache.fetchMenu(force),
+        clientCache.fetchConfig(force),
+        clientCache.fetchCategories(force),
       ])
       
-      const tables: TableConfig[] = await tablesRes.json()
       const config = tables.find((t) => t.id === masaId) ?? null
       setMasaConfig(config)
 
-      const menuData = await menuRes.json()
-      const currentMenu: MenuItem[] = Array.isArray(menuData) ? menuData : []
+      const currentMenu: MenuItem[] = Array.isArray(menu) ? menu : []
       setMenu(currentMenu)
 
-      const activePolicy: PricingPolicy = await configRes.json()
+      const activePolicy: PricingPolicy = policy
       setPolitika(activePolicy)
 
-      const catsData = await categoriesRes.json()
-      setCategories(Array.isArray(catsData) ? catsData : [])
+      setCategories(Array.isArray(categories) ? categories : [])
 
       if (sessionRes.ok) {
         const activeSession: TableSession = await sessionRes.json()
@@ -167,6 +167,7 @@ export default function HesapKapatClient({ masaId }: Props) {
   }, [masaId, showToast])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     yukle()
   }, [yukle])
 
@@ -305,6 +306,7 @@ export default function HesapKapatClient({ masaId }: Props) {
           masaKapatilsinMi: masayiKapatOnay,
           masaAdi: masaConfig?.ad,
           tip: paymentMode,
+          garson: getActiveWaiter() || undefined,
         }),
       })
 
@@ -429,14 +431,7 @@ export default function HesapKapatClient({ masaId }: Props) {
       </div>
 
       {/* Ana 3 Kolonlu Grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 360px',
-          gap: 'var(--space-6)',
-          alignItems: 'start',
-        }}
-      >
+      <div className="hesap-kapat-grid">
         {/* Kolon 1: Masanın Tüm Siparişleri */}
         <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div

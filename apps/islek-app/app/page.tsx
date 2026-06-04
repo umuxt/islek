@@ -2,78 +2,14 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { Map as MapIcon, List, Dices, Receipt, Armchair, ArrowRightLeft, Building2, RefreshCw } from 'lucide-react'
-import type { FloorConfig, TableConfig, TableSession, PricingPolicy } from '@islek/db'
+import { Map as MapIcon, List, Dices, Receipt, Armchair, ArrowRightLeft, Building2, RefreshCw, AlertTriangle, Users, User } from 'lucide-react'
+import type { FloorConfig, TableConfig, TableSession, PricingPolicy, CafeUser } from '@islek/db'
+import { clientCache } from '@/lib/clientCache'
+import { getActiveWaiter, setActiveWaiter } from '@/lib/waiter'
+import { hesaplaOturumToplami, hesaplaSure as hesaplaSureDk, formatSure } from '@/lib/pricing'
 
 const DEFAULT_FLOOR_ID = 'zemin'
-const FLOOR_STORAGE_KEY = 'okeybill_aktif_kat'
-
-// Süre formatlama (client-safe, lib/pricing'den bağımsız)
-function hesaplaSureDk(acilisZamani: string): number {
-  return Math.floor((Date.now() - new Date(acilisZamani).getTime()) / 60000)
-}
-
-function formatSure(dakika: number): string {
-  const s = Math.floor(dakika / 60)
-  const dk = dakika % 60
-  if (s === 0) return `${dk}dk`
-  return `${s}s ${dk}dk`
-}
-
-function hesaplaToplamClient(session: TableSession, politika: PricingPolicy): number {
-  const sipTotal = session.siparisler.reduce((t, s) => t + s.fiyat * s.adet, 0)
-  const odenenler = session.odemeler || []
-  let urunBazliOdenen = 0
-  let tutarBazliOdenen = 0
-  
-  odenenler.forEach((o: any) => {
-    if (o.tip === 'tutar_bazli' || o.urunler?.some((u: any) => u.menuItemId === 'custom-amount' || u.ad === 'Tutar Olarak Ödeme')) {
-      tutarBazliOdenen += o.tutar
-    } else {
-      urunBazliOdenen += o.tutar
-    }
-  })
-
-  let baseTotal = 0
-  switch (politika.mod) {
-    case 'siparis_bazli':
-      baseTotal = sipTotal
-      break
-    case 'masa_limiti':
-      baseTotal = Math.max(sipTotal + urunBazliOdenen, politika.minimumHarcama ?? 0) - urunBazliOdenen
-      break
-    case 'oyun_parasi': {
-      let oyunUcreti = 0
-      if (politika.saatlikUcretAktif) {
-        const saat = (Date.now() - new Date(session.acilisZamani).getTime()) / 3_600_000
-        const ceilSaat = Math.max(1, Math.ceil(saat))
-        if (politika.kisiBasiMi) {
-          oyunUcreti = ceilSaat * (politika.saatlikUcret ?? 0) * session.oyuncuSayisi
-        } else {
-          oyunUcreti = ceilSaat * (politika.saatlikUcret ?? 0)
-        }
-      } else {
-        oyunUcreti = politika.sabitUcret ?? 0
-      }
-
-      let oyunUcretiOdenen = 0
-      odenenler.forEach((o: any) => {
-        o.urunler?.forEach((u: any) => {
-          if (u.menuItemId === 'game-fee') {
-            oyunUcretiOdenen += u.fiyat * u.adet
-          }
-        })
-      })
-
-      oyunUcreti = Math.max(0, oyunUcreti - oyunUcretiOdenen)
-      baseTotal = sipTotal + oyunUcreti
-      break
-    }
-    default:
-      baseTotal = sipTotal
-  }
-  return Math.max(0, baseTotal - tutarBazliOdenen)
-}
+const FLOOR_STORAGE_KEY = 'islek_aktif_kat'
 
 type MasaDurumu = 'bos' | 'acik' | 'hesap_istendi'
 
@@ -108,23 +44,71 @@ export default function CafePage() {
   const [gorunum, setGorunum] = useState<'liste' | 'harita'>('harita')
   const [yukleniyor, setYukleniyor] = useState(true)
   const [tick, setTick] = useState(0) // zamanlayıcı için
+  const [isSlowMode, setIsSlowMode] = useState(false)
+  const [isIdle, setIsIdle] = useState(false)
+  const [isVisible, setIsVisible] = useState(true)
 
   const [transferModuAcik, setTransferModuAcik] = useState(false)
   const [transferSourceMasa, setTransferSourceMasa] = useState<MasaState | null>(null)
   const [isTransferring, setIsTransferring] = useState(false)
 
-  const yukle = useCallback(async () => {
+  const [userTrackingEnabled, setUserTrackingEnabled] = useState(false)
+  const [activeUsers, setActiveUsers] = useState<CafeUser[]>([])
+  const [aktifGarson, setAktifGarson] = useState<string | null>(null)
+
+  useEffect(() => {
+    const checkTracking = async () => {
+      try {
+        const res = await fetch('/api/users')
+        if (res.ok) {
+          const data = await res.json()
+          setUserTrackingEnabled(!!data.trackingEnabled)
+          const allUsers: CafeUser[] = Array.isArray(data.users) ? data.users : []
+          setActiveUsers(allUsers.filter((u) => u.active !== false))
+        }
+      } catch (err) {
+        console.error('Kullanıcılar alınamadı', err)
+      }
+    }
+
+    setAktifGarson(getActiveWaiter())
+    checkTracking()
+
+    const handleWaiterChange = () => {
+      setAktifGarson(getActiveWaiter())
+    }
+    const handleFocus = () => {
+      setAktifGarson(getActiveWaiter())
+    }
+
+    window.addEventListener('islek-garson-changed', handleWaiterChange)
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      window.removeEventListener('islek-garson-changed', handleWaiterChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [])
+
+  // Tab görünürlük takibi (Sekme arka plana geçince polling'i durdurur)
+  useEffect(() => {
+    const handleVisibility = () => {
+      setIsVisible(document.visibilityState === 'visible')
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
+
+
+  const yukle = useCallback(async (forceUpdate = false) => {
+    const force = typeof forceUpdate === 'boolean' ? forceUpdate : false
     try {
-      const [tablesRes, sessionsRes, configRes, floorsRes] = await Promise.all([
-        fetch('/api/tables'),
+      const [tables, sessionsRes, policy, floors] = await Promise.all([
+        clientCache.fetchTables(force),
         fetch('/api/sessions'),
-        fetch('/api/config'),
-        fetch('/api/floors'),
+        clientCache.fetchConfig(force),
+        clientCache.fetchFloors(force),
       ])
-      const tables: TableConfig[] = await tablesRes.json()
       const sessions: TableSession[] = await sessionsRes.json()
-      const policy: PricingPolicy = await configRes.json()
-      const floors: FloorConfig[] = await floorsRes.json()
       const floorList = normalizeFloors(Array.isArray(floors) ? floors : [])
       const savedFloor = localStorage.getItem(FLOOR_STORAGE_KEY)
       const nextActiveFloor = savedFloor && floorList.some((floor) => floor.id === savedFloor)
@@ -153,24 +137,100 @@ export default function CafePage() {
     }
   }, [])
 
-  // İlk yükleme + 5 saniyede bir otomatik yenile
+  const yenileDinamik = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sessions')
+      if (!res.ok) return
+      const sessions: TableSession[] = await res.json()
+      const sessionMap = new Map(sessions.map((s) => [s.masaId, s]))
+
+      setMasalar((prevMasalar) =>
+        prevMasalar.map((m) => {
+          const session = sessionMap.get(m.config.id) ?? null
+          let durum: MasaDurumu = 'bos'
+          if (session?.durum === 'hesap_istendi') durum = 'hesap_istendi'
+          else if (session) durum = 'acik'
+          return { ...m, session, durum }
+        })
+      )
+    } catch (err) {
+      console.error('Dinamik oturumlar yenilenemedi', err)
+    }
+  }, [])
+
+  // 3 dakika boyunca etkinlik algılanmazsa uyku moduna geç, 1 dakika etkinlik algılanmazsa yavaş polling moduna geç
   useEffect(() => {
+    let idleTimer: NodeJS.Timeout
+    let slowTimer: NodeJS.Timeout
+    const SLOW_TIMEOUT = 60000  // 1 dakika
+    const IDLE_TIMEOUT = 180000 // 3 dakika
+
+    const resetTimers = () => {
+      setIsIdle(false)
+      setIsSlowMode((prev) => {
+        if (prev) {
+          // Yavaş moddan çıkarken hemen veriyi yenileyelim
+          yenileDinamik()
+        }
+        return false
+      })
+      clearTimeout(idleTimer)
+      clearTimeout(slowTimer)
+      
+      slowTimer = setTimeout(() => {
+        setIsSlowMode(true)
+      }, SLOW_TIMEOUT)
+
+      idleTimer = setTimeout(() => {
+        setIsIdle(true)
+        setActiveWaiter(null)
+      }, IDLE_TIMEOUT)
+    }
+
+    resetTimers()
+
+    const events = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll']
+    const handler = () => resetTimers()
+    events.forEach((event) => window.addEventListener(event, handler, { passive: true }))
+
+    return () => {
+      clearTimeout(idleTimer)
+      clearTimeout(slowTimer)
+      events.forEach((event) => window.removeEventListener(event, handler))
+    }
+  }, [yenileDinamik])
+
+  // Sayfa açıldığında ilk tam yükleme
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     yukle()
-    const interval = setInterval(yukle, 5000)
-    return () => clearInterval(interval)
   }, [yukle])
+
+  // Uyanıkken ve sekme görünürken aktif oturumları yenile (Vercel & Redis limit dostu)
+  useEffect(() => {
+    if (isIdle || !isVisible) return
+
+    // Uykudan uyanınca veya sekmeye geri dönünce hemen bir kez yenile
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    yenileDinamik()
+
+    const intervalTime = isSlowMode ? 45000 : 20000
+    const interval = setInterval(yenileDinamik, intervalTime)
+    return () => clearInterval(interval)
+  }, [isIdle, isVisible, isSlowMode, yenileDinamik])
 
   // Görünüm tercihi (mount olunca)
   useEffect(() => {
-    const kayitliGorunum = localStorage.getItem('okeybill_gorunum')
+    const kayitliGorunum = localStorage.getItem('islek_gorunum')
     if (kayitliGorunum === 'liste' || kayitliGorunum === 'harita') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setGorunum(kayitliGorunum)
     }
   }, [])
 
   const handleGorunumDegistir = (yeni: 'liste' | 'harita') => {
     setGorunum(yeni)
-    localStorage.setItem('okeybill_gorunum', yeni)
+    localStorage.setItem('islek_gorunum', yeni)
   }
 
   const handleKatDegistir = (katId: string) => {
@@ -230,18 +290,93 @@ export default function CafePage() {
 
   if (yukleniyor) {
     return (
-      <main>
-        <div className="container">
-          <div className="page-header">
-            <div>
-              <h1 className="page-title">Cafe</h1>
-              <p className="page-subtitle">Yükleniyor…</p>
+      <main className="container" style={{ padding: 'var(--space-8) 0' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '40px 0' }}>
+          <img src="/logo-islek.svg" alt="Loading" style={{ height: '64px', width: 'auto', animation: 'pulse 1.5s ease-in-out infinite' }} />
+          <p style={{ color: 'var(--color-text-muted)', fontSize: 15 }}>Masalar Yükleniyor...</p>
+        </div>
+      </main>
+    )
+  }
+
+  if (userTrackingEnabled && !aktifGarson) {
+    return (
+      <main className="container page-container" style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 'var(--space-12)', paddingBottom: 'var(--space-12)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-6)', width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', color: 'var(--color-accent)' }}>
+            <Users size={48} />
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <h2 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--color-text)' }}>Kullanıcı Seçimi Zorunlu</h2>
+            <p style={{ fontSize: '15px', color: 'var(--color-text-muted)', marginTop: '8px', lineHeight: 1.5 }}>
+              Lütfen işlem yapmaya başlamadan önce isminizi seçin.
+            </p>
+          </div>
+
+          {activeUsers.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 480, width: '100%' }}>
+              <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', padding: '12px', borderRadius: 'var(--radius-md)', fontSize: 13, color: 'var(--color-active)' }}>
+                Sistemde tanımlı aktif garson bulunamadı.
+              </div>
+              <Link href="/ayarlar?tab=kullanicilar" className="btn btn-primary" style={{ justifyContent: 'center' }}>
+                Kullanıcı Ayarlarına Git
+              </Link>
             </div>
-          </div>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', padding: '24px 0' }}>
-            <img src="/logo-islek.svg" alt="Loading" style={{ height: '64px', width: 'auto', marginBottom: '16px', animation: 'pulse 1.5s ease-in-out infinite' }} />
-            <p style={{ color: 'var(--color-text-muted)', fontSize: 15 }}>Masalar Yükleniyor...</p>
-          </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+              gap: 'var(--space-4)',
+              justifyContent: 'center',
+              padding: '4px',
+              width: '100%',
+              marginTop: 'var(--space-4)'
+            }}>
+              {activeUsers.map((user) => (
+                <button
+                  key={user.id}
+                  onClick={() => setActiveWaiter(user.name)}
+                  className="btn btn-secondary"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '20px',
+                    aspectRatio: '1 / 1',
+                    padding: 'var(--space-8)',
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    borderRadius: 'var(--radius-lg)',
+                    background: 'var(--color-surface-2)',
+                    borderColor: 'var(--color-border)',
+                    transition: 'all 0.15s ease',
+                    cursor: 'pointer',
+                    minWidth: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    const el = e.currentTarget as HTMLElement
+                    el.style.borderColor = 'var(--color-accent)'
+                    el.style.background = 'var(--color-accent-dim)'
+                    el.style.transform = 'scale(1.04)'
+                  }}
+                  onMouseLeave={(e) => {
+                    const el = e.currentTarget as HTMLElement
+                    el.style.borderColor = 'var(--color-border)'
+                    el.style.background = 'var(--color-surface-2)'
+                    el.style.transform = 'scale(1)'
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', color: 'var(--color-accent)' }}>
+                    <User size={64} />
+                  </span>
+                  <span style={{ textAlign: 'center', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                    {user.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     )
@@ -275,8 +410,7 @@ export default function CafePage() {
     const tumSistemdeMasaYok = masalar.length === 0
 
     return (
-      <main>
-        <div className="container">
+      <main className="container page-container">
           <div className="page-header">
             <div>
               <h1 className="page-title">Cafe</h1>
@@ -284,7 +418,7 @@ export default function CafePage() {
             </div>
             <div className="page-header__actions">
               {katSecici}
-              <button onClick={yukle} className="btn btn-ghost btn-sm" title="Yenile">
+              <button onClick={() => yukle(true)} className="btn btn-ghost btn-sm" title="Yenile">
                 <RefreshCw size={16} /> Yenile
               </button>
             </div>
@@ -300,7 +434,6 @@ export default function CafePage() {
               Masa Ekle
             </Link>
           </div>
-        </div>
       </main>
     )
   }
@@ -389,7 +522,14 @@ export default function CafePage() {
               </button>
             </div>
 
-            <button onClick={yukle} className="btn btn-secondary btn-sm" title="Yenile" style={{ height: 34, width: 34, padding: 0, minWidth: 'auto' }}>
+            {isIdle && (
+              <span className="badge badge-yellow" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, animation: 'pulse 2s infinite', fontSize: 12, padding: '4px 10px', height: 34 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--color-bill)', display: 'inline-block' }} />
+                Tasarruf Modu (Uyku)
+              </span>
+            )}
+
+            <button onClick={() => yukle(true)} className="btn btn-secondary btn-sm" title="Yenile" style={{ height: 34, width: 34, padding: 0, minWidth: 'auto' }}>
               <RefreshCw size={16} />
             </button>
           </div>
@@ -436,8 +576,10 @@ export default function CafePage() {
             paddingBottom: 'var(--space-12)'
           }}>
             {gorunenMasalar.map(({ config, session, durum }) => {
-              const sure = session ? formatSure(hesaplaSureDk(session.acilisZamani)) : null
-              const toplam = session ? hesaplaToplamClient(session, politika) : 0
+              const sureDk = session ? hesaplaSureDk(session.acilisZamani) : 0
+              const sure = session ? formatSure(sureDk) : null
+              const toplam = session ? hesaplaOturumToplami(session, politika) : 0
+              const isUnutulmus = session && sureDk > 360 // 6 saat (360 dakika)
               void tick
 
               let renkBadge = 'badge-green'
@@ -447,7 +589,7 @@ export default function CafePage() {
               if (durum === 'acik') {
                 renkBadge = 'badge-red'
                 durumText = 'Aktif'
-                cardBorder = '1px solid var(--color-active)'
+                cardBorder = isUnutulmus ? '1px dashed var(--color-bill)' : '1px solid var(--color-active)'
               } else if (durum === 'hesap_istendi') {
                 renkBadge = 'badge-yellow'
                 durumText = 'Hesap İstendi'
@@ -469,9 +611,16 @@ export default function CafePage() {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
-                      <h3 style={{ fontSize: 16, fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text)' }}>
-                        {config.ad}
-                      </h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <h3 style={{ fontSize: 16, fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text)' }}>
+                          {config.ad}
+                        </h3>
+                        {isUnutulmus && (
+                          <span title="6 saatten uzun süredir açık! Açık unutulmuş olabilir." style={{ color: 'var(--color-bill)', display: 'inline-flex', alignItems: 'center', animation: 'pulse 1.5s infinite' }}>
+                            <AlertTriangle size={15} />
+                          </span>
+                        )}
+                      </div>
                       <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
                         Kapasite: {config.kapasite} Kişi
                       </p>
@@ -483,6 +632,24 @@ export default function CafePage() {
 
                   {session ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {isUnutulmus && (
+                        <div style={{
+                          background: 'rgba(234, 179, 8, 0.08)',
+                          border: '1px solid rgba(234, 179, 8, 0.2)',
+                          borderRadius: 'var(--radius-sm)',
+                          padding: '6px 10px',
+                          fontSize: 12,
+                          color: 'var(--color-bill)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          marginBottom: 4,
+                          fontWeight: 500
+                        }}>
+                          <AlertTriangle size={14} />
+                          <span>Açık Unutulmuş Olabilir</span>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--color-text-muted)' }}>
                         <span>Açılış Süresi:</span>
                         <span style={{ fontWeight: 600, color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}>{sure}</span>
@@ -564,7 +731,9 @@ export default function CafePage() {
               }}
             >
               {gorunenMasalar.map(({ config, session, durum }) => {
-                const sure = session ? formatSure(hesaplaSureDk(session.acilisZamani)) : null
+                const sureDk = session ? hesaplaSureDk(session.acilisZamani) : 0
+                const sure = session ? formatSure(sureDk) : null
+                const isUnutulmus = session && sureDk > 360 // 6 saat (360 dakika)
                 void tick
 
                 const renkMap = {
@@ -576,9 +745,9 @@ export default function CafePage() {
                   },
                   acik: {
                     bg: 'var(--color-active-dim)',
-                    border: 'var(--color-active)',
-                    shadow: 'rgba(239,68,68,0.2)',
-                    textColor: 'var(--color-active)',
+                    border: isUnutulmus ? 'var(--color-bill)' : 'var(--color-active)',
+                    shadow: isUnutulmus ? 'rgba(234,179,8,0.2)' : 'rgba(239,68,68,0.2)',
+                    textColor: isUnutulmus ? 'var(--color-bill)' : 'var(--color-active)',
                   },
                   hesap_istendi: {
                     bg: 'var(--color-bill-dim)',
@@ -702,6 +871,33 @@ export default function CafePage() {
                     ) : (
                       <span style={{ fontSize: 11, fontWeight: 600, color: renk.textColor, fontVariantNumeric: 'tabular-nums' }}>
                         {sure}
+                      </span>
+                    )}
+
+                    {/* Açık Unutulma Uyarısı (Sol Üst) */}
+                    {isUnutulmus && (
+                      <span 
+                        title="6 saatten uzun süredir açık! Açık unutulmuş olabilir."
+                        style={{
+                          position: 'absolute',
+                          top: -6,
+                          left: -6,
+                          background: 'var(--color-bill)',
+                          color: '#000',
+                          fontSize: 10,
+                          fontWeight: 800,
+                          borderRadius: '50%',
+                          width: 18,
+                          height: 18,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                          animation: 'pulse 1.5s infinite',
+                          zIndex: 11,
+                        }}
+                      >
+                        <AlertTriangle size={12} />
                       </span>
                     )}
 

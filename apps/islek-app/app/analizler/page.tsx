@@ -86,45 +86,47 @@ export default function AnalizlerPage() {
     <main className="container page-container">
       
       {/* Header & Filters */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', marginBottom: 'var(--space-6)', gap: 'var(--space-4)' }}>
-        <div>
+      <div className="page-header">
+        <div className="page-header__left">
           <h1 className="page-title">Analizler</h1>
         </div>
 
-        <div style={{ display: 'flex', gap: 'var(--space-2)', background: 'var(--color-surface-2)', padding: 'var(--space-1)', borderRadius: 'var(--radius-full)', justifyContent: 'center' }}>
-          {[
-            { label: 'Bugün', val: 1 },
-            { label: 'Son 7 Gün', val: 7 },
-            { label: 'Son 30 Gün', val: 30 },
-            { label: 'Tüm Zamanlar', val: 365 },
-          ].map(f => (
-            <button
-              key={f.val}
-              onClick={() => setZamanFiltresi(f.val)}
-              className="btn btn-sm"
-              style={{
-                padding: '6px 14px', fontSize: 13, fontWeight: 600,
-                borderRadius: 'var(--radius-full)', border: 'none', cursor: 'pointer',
-                background: zamanFiltresi === f.val ? '#000' : 'transparent',
-                color: zamanFiltresi === f.val ? '#20D76D' : 'var(--color-text-muted)',
-                boxShadow: zamanFiltresi === f.val ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
-                transition: 'all 0.2s ease',
-              }}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <div className="page-header__actions" style={{ justifyContent: 'flex-start', width: 'auto' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', background: 'var(--color-surface-2)', padding: 'var(--space-1)', borderRadius: 'var(--radius-full)', justifyContent: 'center', flexWrap: 'wrap' }}>
+            {[
+              { label: 'Bugün', val: 1 },
+              { label: 'Son 7 Gün', val: 7 },
+              { label: 'Son 30 Gün', val: 30 },
+              { label: 'Tüm Zamanlar', val: 365 },
+            ].map(f => (
+              <button
+                key={f.val}
+                onClick={() => setZamanFiltresi(f.val)}
+                className="btn btn-sm"
+                style={{
+                  padding: '6px 14px', fontSize: 13, fontWeight: 600,
+                  borderRadius: 'var(--radius-full)', border: 'none', cursor: 'pointer',
+                  background: zamanFiltresi === f.val ? '#000' : 'transparent',
+                  color: zamanFiltresi === f.val ? '#20D76D' : 'var(--color-text-muted)',
+                  boxShadow: zamanFiltresi === f.val ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <a 
-            href="/analizler/gun-sonu"
-            className="btn btn-primary btn-sm"
-            style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-            GÜN SONU KONTROL
-          </a>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <a 
+              href="/analizler/gun-sonu"
+              className="btn btn-primary btn-sm"
+              style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+              GÜN SONU KONTROL
+            </a>
+          </div>
         </div>
       </div>
 

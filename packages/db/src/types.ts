@@ -42,6 +42,12 @@ export interface PricingPolicy {
 }
 
 // ─── Oturum ──────────────────────────────────────────────
+export interface CafeUser {
+  id: string
+  name: string
+  active: boolean // Soft delete flag
+}
+
 export interface Siparis {
   id: string
   menuItemId: string
@@ -49,6 +55,7 @@ export interface Siparis {
   fiyat: number
   adet: number
   zamani: string    // ISO timestamp
+  garson?: string   // waiter who processed this order
 }
 
 export type MasaDurumu = 'acik' | 'hesap_istendi'
@@ -66,6 +73,7 @@ export interface TableSession {
     zamani: string
     urunler: { menuItemId?: string; ad: string; fiyat: number; adet: number }[]
     tip?: 'urun_bazli' | 'tutar_bazli'
+    garson?: string
   }[]
 }
 

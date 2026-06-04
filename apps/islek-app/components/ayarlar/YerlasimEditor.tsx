@@ -13,7 +13,7 @@ const VIRTUAL_W = 2000 // Virtual Layout Width
 const VIRTUAL_H = 1500 // Virtual Layout Height
 const GRID = 20
 const DEFAULT_FLOOR_ID = 'zemin'
-const FLOOR_STORAGE_KEY = 'okeybill_aktif_kat'
+const FLOOR_STORAGE_KEY = 'islek_aktif_kat'
 
 function snap(v: number) {
   return Math.round(v / GRID) * GRID
@@ -351,7 +351,7 @@ export default function YerlasimEditor({ onDirtyChange }: Props) {
                 }}>
                   <span style={{ color: 'var(--color-text-muted)' }}><Armchair size={48} /></span>
                   <span style={{ fontSize: 14, color: 'var(--color-text-muted)' }}>
-                    Bu katta masa yok. "Masa Ekle" butonuna tıklayın
+                    Bu katta masa yok. &quot;Masa Ekle&quot; butonuna tıklayın
                   </span>
                 </div>
               )}
