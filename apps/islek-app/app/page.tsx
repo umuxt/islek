@@ -2,79 +2,14 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { Map as MapIcon, List, Dices, Receipt, Armchair, ArrowRightLeft, Building2, RefreshCw, AlertTriangle } from 'lucide-react'
-import type { FloorConfig, TableConfig, TableSession, PricingPolicy } from '@islek/db'
+import { Map as MapIcon, List, Dices, Receipt, Armchair, ArrowRightLeft, Building2, RefreshCw, AlertTriangle, Users, User } from 'lucide-react'
+import type { FloorConfig, TableConfig, TableSession, PricingPolicy, CafeUser } from '@islek/db'
 import { clientCache } from '@/lib/clientCache'
+import { getActiveWaiter, setActiveWaiter } from '@/lib/waiter'
+import { hesaplaOturumToplami, hesaplaSure as hesaplaSureDk, formatSure } from '@/lib/pricing'
 
 const DEFAULT_FLOOR_ID = 'zemin'
 const FLOOR_STORAGE_KEY = 'islek_aktif_kat'
-
-// Süre formatlama (client-safe, lib/pricing'den bağımsız)
-function hesaplaSureDk(acilisZamani: string): number {
-  return Math.floor((Date.now() - new Date(acilisZamani).getTime()) / 60000)
-}
-
-function formatSure(dakika: number): string {
-  const s = Math.floor(dakika / 60)
-  const dk = dakika % 60
-  if (s === 0) return `${dk}dk`
-  return `${s}s ${dk}dk`
-}
-
-function hesaplaToplamClient(session: TableSession, politika: PricingPolicy): number {
-  const sipTotal = session.siparisler.reduce((t, s) => t + s.fiyat * s.adet, 0)
-  const odenenler = session.odemeler || []
-  let urunBazliOdenen = 0
-  let tutarBazliOdenen = 0
-  
-  odenenler.forEach((o) => {
-    if (o.tip === 'tutar_bazli' || o.urunler?.some((u) => u.menuItemId === 'custom-amount' || u.ad === 'Tutar Olarak Ödeme')) {
-      tutarBazliOdenen += o.tutar
-    } else {
-      urunBazliOdenen += o.tutar
-    }
-  })
-
-  let baseTotal = 0
-  switch (politika.mod) {
-    case 'siparis_bazli':
-      baseTotal = sipTotal
-      break
-    case 'masa_limiti':
-      baseTotal = Math.max(sipTotal + urunBazliOdenen, politika.minimumHarcama ?? 0) - urunBazliOdenen
-      break
-    case 'oyun_parasi': {
-      let oyunUcreti = 0
-      if (politika.saatlikUcretAktif) {
-        const saat = (Date.now() - new Date(session.acilisZamani).getTime()) / 3_600_000
-        const ceilSaat = Math.max(1, Math.ceil(saat))
-        if (politika.kisiBasiMi) {
-          oyunUcreti = ceilSaat * (politika.saatlikUcret ?? 0) * session.oyuncuSayisi
-        } else {
-          oyunUcreti = ceilSaat * (politika.saatlikUcret ?? 0)
-        }
-      } else {
-        oyunUcreti = politika.sabitUcret ?? 0
-      }
-
-      let oyunUcretiOdenen = 0
-      odenenler.forEach((o) => {
-        o.urunler?.forEach((u) => {
-          if (u.menuItemId === 'game-fee') {
-            oyunUcretiOdenen += u.fiyat * u.adet
-          }
-        })
-      })
-
-      oyunUcreti = Math.max(0, oyunUcreti - oyunUcretiOdenen)
-      baseTotal = sipTotal + oyunUcreti
-      break
-    }
-    default:
-      baseTotal = sipTotal
-  }
-  return Math.max(0, baseTotal - tutarBazliOdenen)
-}
 
 type MasaDurumu = 'bos' | 'acik' | 'hesap_istendi'
 
@@ -116,6 +51,43 @@ export default function CafePage() {
   const [transferModuAcik, setTransferModuAcik] = useState(false)
   const [transferSourceMasa, setTransferSourceMasa] = useState<MasaState | null>(null)
   const [isTransferring, setIsTransferring] = useState(false)
+
+  const [userTrackingEnabled, setUserTrackingEnabled] = useState(false)
+  const [activeUsers, setActiveUsers] = useState<CafeUser[]>([])
+  const [aktifGarson, setAktifGarson] = useState<string | null>(null)
+
+  useEffect(() => {
+    const checkTracking = async () => {
+      try {
+        const res = await fetch('/api/users')
+        if (res.ok) {
+          const data = await res.json()
+          setUserTrackingEnabled(!!data.trackingEnabled)
+          const allUsers: CafeUser[] = Array.isArray(data.users) ? data.users : []
+          setActiveUsers(allUsers.filter((u) => u.active !== false))
+        }
+      } catch (err) {
+        console.error('Kullanıcılar alınamadı', err)
+      }
+    }
+
+    setAktifGarson(getActiveWaiter())
+    checkTracking()
+
+    const handleWaiterChange = () => {
+      setAktifGarson(getActiveWaiter())
+    }
+    const handleFocus = () => {
+      setAktifGarson(getActiveWaiter())
+    }
+
+    window.addEventListener('islek-garson-changed', handleWaiterChange)
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      window.removeEventListener('islek-garson-changed', handleWaiterChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [])
 
   // Tab görünürlük takibi (Sekme arka plana geçince polling'i durdurur)
   useEffect(() => {
@@ -211,6 +183,7 @@ export default function CafePage() {
 
       idleTimer = setTimeout(() => {
         setIsIdle(true)
+        setActiveWaiter(null)
       }, IDLE_TIMEOUT)
     }
 
@@ -321,6 +294,89 @@ export default function CafePage() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '40px 0' }}>
           <img src="/logo-islek.svg" alt="Loading" style={{ height: '64px', width: 'auto', animation: 'pulse 1.5s ease-in-out infinite' }} />
           <p style={{ color: 'var(--color-text-muted)', fontSize: 15 }}>Masalar Yükleniyor...</p>
+        </div>
+      </main>
+    )
+  }
+
+  if (userTrackingEnabled && !aktifGarson) {
+    return (
+      <main className="container page-container" style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 'var(--space-12)', paddingBottom: 'var(--space-12)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-6)', width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', color: 'var(--color-accent)' }}>
+            <Users size={48} />
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <h2 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--color-text)' }}>Kullanıcı Seçimi Zorunlu</h2>
+            <p style={{ fontSize: '15px', color: 'var(--color-text-muted)', marginTop: '8px', lineHeight: 1.5 }}>
+              Lütfen işlem yapmaya başlamadan önce isminizi seçin.
+            </p>
+          </div>
+
+          {activeUsers.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 480, width: '100%' }}>
+              <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', padding: '12px', borderRadius: 'var(--radius-md)', fontSize: 13, color: 'var(--color-active)' }}>
+                Sistemde tanımlı aktif garson bulunamadı.
+              </div>
+              <Link href="/ayarlar?tab=kullanicilar" className="btn btn-primary" style={{ justifyContent: 'center' }}>
+                Kullanıcı Ayarlarına Git
+              </Link>
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+              gap: 'var(--space-4)',
+              justifyContent: 'center',
+              padding: '4px',
+              width: '100%',
+              marginTop: 'var(--space-4)'
+            }}>
+              {activeUsers.map((user) => (
+                <button
+                  key={user.id}
+                  onClick={() => setActiveWaiter(user.name)}
+                  className="btn btn-secondary"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '20px',
+                    aspectRatio: '1 / 1',
+                    padding: 'var(--space-8)',
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    borderRadius: 'var(--radius-lg)',
+                    background: 'var(--color-surface-2)',
+                    borderColor: 'var(--color-border)',
+                    transition: 'all 0.15s ease',
+                    cursor: 'pointer',
+                    minWidth: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    const el = e.currentTarget as HTMLElement
+                    el.style.borderColor = 'var(--color-accent)'
+                    el.style.background = 'var(--color-accent-dim)'
+                    el.style.transform = 'scale(1.04)'
+                  }}
+                  onMouseLeave={(e) => {
+                    const el = e.currentTarget as HTMLElement
+                    el.style.borderColor = 'var(--color-border)'
+                    el.style.background = 'var(--color-surface-2)'
+                    el.style.transform = 'scale(1)'
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', color: 'var(--color-accent)' }}>
+                    <User size={64} />
+                  </span>
+                  <span style={{ textAlign: 'center', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                    {user.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     )
@@ -522,7 +578,7 @@ export default function CafePage() {
             {gorunenMasalar.map(({ config, session, durum }) => {
               const sureDk = session ? hesaplaSureDk(session.acilisZamani) : 0
               const sure = session ? formatSure(sureDk) : null
-              const toplam = session ? hesaplaToplamClient(session, politika) : 0
+              const toplam = session ? hesaplaOturumToplami(session, politika) : 0
               const isUnutulmus = session && sureDk > 360 // 6 saat (360 dakika)
               void tick
 

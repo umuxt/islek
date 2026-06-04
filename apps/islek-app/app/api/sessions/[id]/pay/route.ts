@@ -20,7 +20,7 @@ export async function POST(
   try {
     const { id } = await params
     const body = await request.json()
-    const { secilenler, yontem, tutar, masaKapatilsinMi, masaAdi, tip } = body
+    const { secilenler, yontem, tutar, masaKapatilsinMi, masaAdi, tip, garson } = body
 
     const session = await getSession(tenantId, id)
     if (!session) {
@@ -67,6 +67,7 @@ export async function POST(
       zamani: odemeZamani,
       urunler: secilenler,
       tip: tip || 'urun_bazli',
+      garson,
     }
 
     session.odemeler = session.odemeler || []
@@ -82,6 +83,7 @@ export async function POST(
       yontem,
       zamani: odemeZamani,
       urunler: secilenler,
+      garson,
     })
 
     // 4. Masayı kapat veya güncelle

@@ -7,6 +7,7 @@ import { Banknote, CreditCard, Building, Check, HelpCircle, Tags, ShoppingCart }
 import { useToast } from '@/context/ToastContext'
 import type { TableConfig, TableSession, MenuItem, PricingPolicy, Kategori } from '@islek/db'
 import { clientCache } from '@/lib/clientCache'
+import { getActiveWaiter } from '@/lib/waiter'
 
 interface Props {
   masaId: string
@@ -305,6 +306,7 @@ export default function HesapKapatClient({ masaId }: Props) {
           masaKapatilsinMi: masayiKapatOnay,
           masaAdi: masaConfig?.ad,
           tip: paymentMode,
+          garson: getActiveWaiter() || undefined,
         }),
       })
 

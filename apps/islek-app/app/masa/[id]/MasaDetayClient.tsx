@@ -3,19 +3,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Armchair, Dices, Receipt, AlertTriangle, Plus, Minus, Check, History } from 'lucide-react'
-import type { TableConfig, TableSession, MenuItem, PricingPolicy, Siparis, Kategori } from '@islek/db'
+import { Armchair, Dices, Receipt, AlertTriangle, Plus, Minus, Check, History, Users, User } from 'lucide-react'
+import type { TableConfig, TableSession, MenuItem, PricingPolicy, Siparis, Kategori, CafeUser } from '@islek/db'
 import { clientCache } from '@/lib/clientCache'
+import { getActiveWaiter, setActiveWaiter } from '@/lib/waiter'
+import { hesaplaOturumToplami, hesaplaSure as hesaplaSureDk, formatSure } from '@/lib/pricing'
 
 // ─── Client-safe yardımcılar ──────────────────────────────
-function hesaplaSureDk(acilis: string) {
-  return Math.floor((Date.now() - new Date(acilis).getTime()) / 60000)
-}
-function formatSure(dk: number) {
-  const s = Math.floor(dk / 60)
-  const m = dk % 60
-  return s === 0 ? `${m}dk` : `${s}s ${m}dk`
-}
 function formatSaat(isoString: string) {
   try {
     const d = new Date(isoString)
@@ -25,60 +19,6 @@ function formatSaat(isoString: string) {
   } catch {
     return ''
   }
-}
-function hesaplaToplamClient(session: TableSession, politika: PricingPolicy): number {
-  const sipTotal = session.siparisler.reduce((t, s) => t + s.fiyat * s.adet, 0)
-  const odenenler = session.odemeler || []
-  let urunBazliOdenen = 0
-  let tutarBazliOdenen = 0
-  
-  odenenler.forEach((o: any) => {
-    if (o.tip === 'tutar_bazli' || o.urunler?.some((u: any) => u.menuItemId === 'custom-amount' || u.ad === 'Tutar Olarak Ödeme')) {
-      tutarBazliOdenen += o.tutar
-    } else {
-      urunBazliOdenen += o.tutar
-    }
-  })
-
-  let baseTotal = 0
-  switch (politika.mod) {
-    case 'siparis_bazli':
-      baseTotal = sipTotal
-      break
-    case 'masa_limiti':
-      baseTotal = Math.max(sipTotal + urunBazliOdenen, politika.minimumHarcama ?? 0) - urunBazliOdenen
-      break
-    case 'oyun_parasi': {
-      let oyunUcreti = 0
-      if (politika.saatlikUcretAktif) {
-        const saat = (Date.now() - new Date(session.acilisZamani).getTime()) / 3_600_000
-        const ceilSaat = Math.max(1, Math.ceil(saat))
-        if (politika.kisiBasiMi) {
-          oyunUcreti = ceilSaat * (politika.saatlikUcret ?? 0) * session.oyuncuSayisi
-        } else {
-          oyunUcreti = ceilSaat * (politika.saatlikUcret ?? 0)
-        }
-      } else {
-        oyunUcreti = politika.sabitUcret ?? 0
-      }
-
-      let oyunUcretiOdenen = 0
-      odenenler.forEach((o: any) => {
-        o.urunler?.forEach((u: any) => {
-          if (u.menuItemId === 'game-fee') {
-            oyunUcretiOdenen += u.fiyat * u.adet
-          }
-        })
-      })
-
-      oyunUcreti = Math.max(0, oyunUcreti - oyunUcretiOdenen)
-      baseTotal = sipTotal + oyunUcreti
-      break
-    }
-    default:
-      baseTotal = sipTotal
-  }
-  return Math.max(0, baseTotal - tutarBazliOdenen)
 }
 function yeniId() {
   return `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -105,6 +45,37 @@ export default function MasaDetayClient({ masaId }: Props) {
   const [tick, setTick]               = useState(0)
   const [onayModal, setOnayModal]     = useState(false)
   const [azaltmaOnayId, setAzaltmaOnayId] = useState<string | null>(null)
+
+  const [userTrackingEnabled, setUserTrackingEnabled] = useState(false)
+  const [activeUsers, setActiveUsers] = useState<CafeUser[]>([])
+  const [aktifGarson, setAktifGarson] = useState<string | null>(null)
+
+  useEffect(() => {
+    const checkTracking = async () => {
+      try {
+        const res = await fetch('/api/users')
+        if (res.ok) {
+          const data = await res.json()
+          setUserTrackingEnabled(!!data.trackingEnabled)
+          const allUsers: CafeUser[] = Array.isArray(data.users) ? data.users : []
+          setActiveUsers(allUsers.filter((u) => u.active !== false))
+        }
+      } catch (err) {
+        console.error('Kullanıcılar alınamadı', err)
+      }
+    }
+
+    setAktifGarson(getActiveWaiter())
+    checkTracking()
+
+    const handleWaiterChange = () => {
+      setAktifGarson(getActiveWaiter())
+    }
+    window.addEventListener('islek-garson-changed', handleWaiterChange)
+    return () => {
+      window.removeEventListener('islek-garson-changed', handleWaiterChange)
+    }
+  }, [])
 
   // Dakikada bir yenile (timer için)
   useEffect(() => {
@@ -181,12 +152,12 @@ export default function MasaDetayClient({ masaId }: Props) {
     let guncel: Siparis[]
     if (mevcut) {
       guncel = session.siparisler.map((s) =>
-        s.menuItemId === item.id ? { ...s, adet: s.adet + 1 } : s
+        s.menuItemId === item.id ? { ...s, adet: s.adet + 1, garson: aktifGarson || s.garson } : s
       )
     } else {
       guncel = [
         ...session.siparisler,
-        { id: yeniId(), menuItemId: item.id, ad: item.ad, fiyat: item.fiyat, adet: 1, zamani: new Date().toISOString() },
+        { id: yeniId(), menuItemId: item.id, ad: item.ad, fiyat: item.fiyat, adet: 1, zamani: new Date().toISOString(), garson: aktifGarson || undefined },
       ]
     }
     const updated = { ...session, siparisler: guncel }
@@ -236,6 +207,89 @@ export default function MasaDetayClient({ masaId }: Props) {
     )
   }
 
+  if (userTrackingEnabled && !aktifGarson) {
+    return (
+      <main className="container page-container" style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 'var(--space-12)', paddingBottom: 'var(--space-12)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-6)', width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', color: 'var(--color-accent)' }}>
+            <Users size={48} />
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <h2 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--color-text)' }}>Kullanıcı Seçimi Zorunlu</h2>
+            <p style={{ fontSize: '15px', color: 'var(--color-text-muted)', marginTop: '8px', lineHeight: 1.5 }}>
+              Lütfen işlem yapmaya başlamadan önce isminizi seçin.
+            </p>
+          </div>
+
+          {activeUsers.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 480, width: '100%' }}>
+              <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', padding: '12px', borderRadius: 'var(--radius-md)', fontSize: 13, color: 'var(--color-active)' }}>
+                Sistemde tanımlı aktif garson bulunamadı.
+              </div>
+              <Link href="/ayarlar?tab=kullanicilar" className="btn btn-primary" style={{ justifyContent: 'center' }}>
+                Kullanıcı Ayarlarına Git
+              </Link>
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+              gap: 'var(--space-4)',
+              justifyContent: 'center',
+              padding: '4px',
+              width: '100%',
+              marginTop: 'var(--space-4)'
+            }}>
+              {activeUsers.map((user) => (
+                <button
+                  key={user.id}
+                  onClick={() => setActiveWaiter(user.name)}
+                  className="btn btn-secondary"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '20px',
+                    aspectRatio: '1 / 1',
+                    padding: 'var(--space-8)',
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    borderRadius: 'var(--radius-lg)',
+                    background: 'var(--color-surface-2)',
+                    borderColor: 'var(--color-border)',
+                    transition: 'all 0.15s ease',
+                    cursor: 'pointer',
+                    minWidth: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    const el = e.currentTarget as HTMLElement
+                    el.style.borderColor = 'var(--color-accent)'
+                    el.style.background = 'var(--color-accent-dim)'
+                    el.style.transform = 'scale(1.04)'
+                  }}
+                  onMouseLeave={(e) => {
+                    const el = e.currentTarget as HTMLElement
+                    el.style.borderColor = 'var(--color-border)'
+                    el.style.background = 'var(--color-surface-2)'
+                    el.style.transform = 'scale(1)'
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', color: 'var(--color-accent)' }}>
+                    <User size={64} />
+                  </span>
+                  <span style={{ textAlign: 'center', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                    {user.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </main>
+    )
+  }
+
   if (!masaConfig) {
     return (
       <div className="container">
@@ -249,7 +303,7 @@ export default function MasaDetayClient({ masaId }: Props) {
   }
 
   const sure = session ? formatSure(hesaplaSureDk(session.acilisZamani)) : null
-  const toplam = session ? hesaplaToplamClient(session, politika) : 0
+  const toplam = session ? hesaplaOturumToplami(session, politika) : 0
   void tick // timer tetikleyici
 
   const menuCategories = categories.map((c) => c.ad)
@@ -309,6 +363,7 @@ export default function MasaDetayClient({ masaId }: Props) {
       baslik: s.ad,
       detay: `${s.adet} adet eklendi`,
       zamani: s.zamani,
+      garson: s.garson,
     }))
 
     const odemeAksiyonlari = (session.odemeler || []).map((o) => ({
@@ -317,6 +372,7 @@ export default function MasaDetayClient({ masaId }: Props) {
       baslik: yontemMap[o.yontem] || o.yontem,
       detay: `₺${o.tutar.toFixed(2)} alındı`,
       zamani: o.zamani,
+      garson: o.garson,
     }))
 
     return [...siparisAksiyonlari, ...odemeAksiyonlari]
@@ -733,9 +789,16 @@ export default function MasaDetayClient({ masaId }: Props) {
                         <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{a.baslik}</span>
                         <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{a.detay}</span>
                       </div>
-                      <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-faint)', fontVariantNumeric: 'tabular-nums' }}>
-                        {formatSaat(a.zamani)}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {a.garson && (
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-muted)', background: 'var(--color-surface-2)', padding: '2px 6px', borderRadius: 'var(--radius-sm)' }}>
+                            {a.garson}
+                          </span>
+                        )}
+                        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-faint)', fontVariantNumeric: 'tabular-nums' }}>
+                          {formatSaat(a.zamani)}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>

@@ -2,20 +2,22 @@
 
 import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { Banknote, Map, List, Settings, AlertTriangle } from 'lucide-react'
+import { Banknote, Map, List, Settings, AlertTriangle, Users } from 'lucide-react'
 import UcretlendirmeAyarlari from '@/components/ayarlar/UcretlendirmeAyarlari'
 import YerlasimEditor from '@/components/ayarlar/YerlasimEditor'
 import MenuEditor from '@/components/ayarlar/MenuEditor'
 import KategoriYonetimi from '@/components/ayarlar/KategoriYonetimi'
+import KullanicilarAyarlari from '@/components/ayarlar/KullanicilarAyarlari'
 import { clientCache } from '@/lib/clientCache'
 
-type Tab = 'ucretlendirme' | 'yerlasim' | 'menu' | 'kategori'
+type Tab = 'ucretlendirme' | 'yerlasim' | 'menu' | 'kategori' | 'kullanicilar'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'ucretlendirme', label: 'Ücretlendirme Politikası', icon: <Banknote size={16}/> },
   { id: 'yerlasim',      label: 'Yerleşim & Masalar',       icon: <Map size={16}/> },
   { id: 'menu',          label: 'Menü',                     icon: <List size={16}/> },
   { id: 'kategori',      label: 'Ürün Kategori Yönetimi',   icon: <Settings size={16}/> },
+  { id: 'kullanicilar',  label: 'Kullanıcılar',             icon: <Users size={16}/> },
 ]
 
 export default function AyarlarClient() {
@@ -44,6 +46,32 @@ export default function AyarlarClient() {
   useEffect(() => {
     setIsCurrentTabDirty(false)
   }, [activeTab])
+
+  // Global dirty state'i pencere düzeyinde sakla (Navbar yönlendirme kontrolü için)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).islekSettingsDirty = isCurrentTabDirty
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        (window as any).islekSettingsDirty = false
+      }
+    }
+  }, [isCurrentTabDirty])
+
+  // Sayfa yenileme/kapatma koruması
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isCurrentTabDirty) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [isCurrentTabDirty])
 
   function switchTab(tab: Tab) {
     setActiveTab(tab)
@@ -104,6 +132,7 @@ export default function AyarlarClient() {
         {activeTab === 'yerlasim'      && <YerlasimEditor onDirtyChange={setIsCurrentTabDirty} />}
         {activeTab === 'menu'          && <MenuEditor onDirtyChange={setIsCurrentTabDirty} />}
         {activeTab === 'kategori'      && <KategoriYonetimi onDirtyChange={setIsCurrentTabDirty} />}
+        {activeTab === 'kullanicilar'  && <KullanicilarAyarlari onDirtyChange={setIsCurrentTabDirty} />}
       </div>
 
       {/* Kaydedilmemiş Değişiklikler Modalı */}

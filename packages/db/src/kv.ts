@@ -7,6 +7,7 @@ import type {
   DailyStats,
   Kategori,
   FloorConfig,
+  CafeUser,
 } from './types'
 
 // ─── Redis istemcisi ─────────────────────────────────────
@@ -42,6 +43,8 @@ export const getKeys = (tenantId: string) => ({
   dailyStats: (date: string) => `tenant:${tenantId}:stats:daily:${date}`,
   dailyStatsIndex: `tenant:${tenantId}:stats:daily:index`,
   payments: (date: string) => `tenant:${tenantId}:stats:payments:${date}`,
+  userTrackingEnabled: `tenant:${tenantId}:config:user-tracking-enabled`,
+  users: `tenant:${tenantId}:config:users`,
 })
 
 // ─── Menü ────────────────────────────────────────────────
@@ -257,6 +260,7 @@ export async function addPaymentRecord(tenantId: string, record: {
   yontem: 'nakit' | 'kredi_karti' | 'iban'
   zamani: string
   urunler: { menuItemId?: string; ad: string; fiyat: number; adet: number }[]
+  garson?: string
 }): Promise<void> {
   const redis = getRedis()
   const bugun = record.zamani.split('T')[0]
@@ -393,4 +397,22 @@ export async function getPaymentsList(tenantId: string, date: string): Promise<a
     }
   })
   return items
+}
+
+// ─── Kullanıcılar & Garson Takibi ─────────────────────────
+export async function getUserTrackingEnabled(tenantId: string): Promise<boolean> {
+  const val = await getRedis().get(getKeys(tenantId).userTrackingEnabled)
+  return val === 'true'
+}
+
+export async function setUserTrackingEnabled(tenantId: string, enabled: boolean): Promise<void> {
+  await getRedis().set(getKeys(tenantId).userTrackingEnabled, enabled ? 'true' : 'false')
+}
+
+export async function getUsers(tenantId: string): Promise<CafeUser[]> {
+  return (await kvGet<CafeUser[]>(getKeys(tenantId).users)) ?? []
+}
+
+export async function setUsers(tenantId: string, users: CafeUser[]): Promise<void> {
+  await kvSet(getKeys(tenantId).users, users)
 }
